@@ -6,46 +6,49 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.camera.view.LifecycleCameraController
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.remember
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import link.sciber.foofinder.presentation.CameraPreview
+import link.sciber.foofinder.presentation.CameraScreen
 import link.sciber.foofinder.ui.theme.FooFinderTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
         if (!hasRequiredPermissions()) {
-            requestPermissions(CAMERAX_PERMISSIONS, 0)
+            ActivityCompat.requestPermissions(
+                this,
+                CAMERAX_PERMISSIONS,
+                0
+            )
         }
 
-        enableEdgeToEdge()
         setContent {
             FooFinderTheme {
-                val controller = remember {
-                    LifecycleCameraController(applicationContext)
-                }
-
-            CameraPreview(controller, Modifier.fillMaxSize())
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) { CameraScreen() }
             }
         }
     }
 
     private fun hasRequiredPermissions(): Boolean {
         return CAMERAX_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(
-                applicationContext,
-                it
-            ) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(applicationContext, it) ==
+                    PackageManager.PERMISSION_GRANTED
         }
     }
 
     companion object {
-        private val CAMERAX_PERMISSIONS = arrayOf(
-            Manifest.permission.CAMERA,
-        )
+        private val CAMERAX_PERMISSIONS =
+            arrayOf(
+                Manifest.permission.CAMERA,
+            )
     }
-
 }

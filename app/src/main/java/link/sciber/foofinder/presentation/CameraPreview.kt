@@ -1,25 +1,137 @@
 package link.sciber.foofinder.presentation
 
+import android.util.Log
+import android.util.Size
+import android.view.Surface
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @Composable
 fun CameraPreview(
-    controller: LifecycleCameraController,
-    modifier: Modifier = Modifier
+        controller: LifecycleCameraController,
+        currentResolution: Size?,
+        onResolutionChange: (Size) -> Unit,
+        modifier: Modifier = Modifier
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
 
-    AndroidView(
-        factory = {
-            PreviewView(it).apply {
-                this.controller = controller
-                controller.bindToLifecycle(lifecycleOwner)
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
+
+    // Function to apply resolution using ProcessCameraProvider
+    fun applyResolution(resolution: Size) {
+        previewView?.let { preview ->
+            try {
+                Log.d(
+                        "CameraPreview",
+                        "Applying resolution: ${resolution.width}x${resolution.height}"
+                )
+
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+                cameraProviderFuture.addListener(
+                        {
+                            val cameraProvider = cameraProviderFuture.get()
+
+                            // Unbind all use cases first
+                            cameraProvider.unbindAll()
+
+                            // Create preview use case with target resolution only
+                            val previewBuilder =
+                                    Preview.Builder()
+                                            .setTargetResolution(resolution)
+                                            .setTargetRotation(
+                                                    Surface.ROTATION_0
+                                            ) // Portrait orientation
+
+                            val previewUseCase = previewBuilder.build()
+
+                            // Set surface provider
+                            previewUseCase.setSurfaceProvider(preview.surfaceProvider)
+
+                            // Bind to lifecycle with back camera
+                            val camera =
+                                    cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            CameraSelector.DEFAULT_BACK_CAMERA,
+                                            previewUseCase
+                                    )
+
+                            // Log actual resolution info
+                            camera.cameraInfo.let { info ->
+                                Log.d("CameraPreview", "Camera bound successfully")
+                            }
+
+                            onResolutionChange(resolution)
+                        },
+                        ContextCompat.getMainExecutor(context)
+                )
+            } catch (e: Exception) {
+                Log.e("CameraPreview", "Error applying resolution", e)
+                e.printStackTrace()
             }
-        }, modifier = modifier
-    )
+        }
+    }
+
+    // Apply resolution when it changes from parent
+    LaunchedEffect(currentResolution) {
+        currentResolution?.let { resolution -> applyResolution(resolution) }
+    }
+
+    // Camera Preview with proper aspect ratio handling
+    Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+        currentResolution?.let { resolution ->
+            val aspectRatio = resolution.width.toFloat() / resolution.height.toFloat()
+
+            // Force recomposition when resolution changes
+            key(resolution) {
+                AndroidView(
+                        factory = { ctx ->
+                            PreviewView(ctx).apply {
+                                // Use FIT_CENTER to preserve aspect ratio
+                                scaleType = PreviewView.ScaleType.FIT_CENTER
+                                previewView = this
+                                Log.d(
+                                        "CameraPreview",
+                                        "PreviewView created with aspect ratio: $aspectRatio for resolution: ${resolution.width}x${resolution.height}"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize().aspectRatio(aspectRatio)
+                )
+            }
+        }
+                ?: run {
+                    // Fallback when no resolution is set
+                    AndroidView(
+                            factory = { ctx ->
+                                PreviewView(ctx).apply {
+                                    scaleType = PreviewView.ScaleType.FIT_CENTER
+                                    previewView = this
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                    )
+                }
+    }
 }
