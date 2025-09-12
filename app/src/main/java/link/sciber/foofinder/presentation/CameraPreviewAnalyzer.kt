@@ -19,12 +19,31 @@ class CameraPreviewAnalyzer : ImageAnalysis.Analyzer {
             val format = imageProxy.format
             val rotationDegrees = imageProxy.imageInfo.rotationDegrees
 
+            // Calculate display-oriented dimensions (what user sees in preview)
+            val displayWidth: Int
+            val displayHeight: Int
+
+            when (rotationDegrees) {
+                90, 270 -> {
+                    // Portrait mode: swap dimensions
+                    displayWidth = height
+                    displayHeight = width
+                }
+                else -> {
+                    // Landscape mode: keep dimensions
+                    displayWidth = width
+                    displayHeight = height
+                }
+            }
+
             Log.d(
                     "CameraPreviewAnalyzer",
-                    "Frame: ${width}x${height}, format: $format, rotation: ${rotationDegrees}°"
+                    "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, format: $format, rotation: ${rotationDegrees}°"
             )
 
             // TODO: Add your image analysis logic here
+            // Note: Use displayWidth/displayHeight if you want coordinates matching the preview
+            // Use width/height if you want to work with raw sensor coordinates
             // For example:
             // - Object detection
             // - QR code scanning
