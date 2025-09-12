@@ -4,6 +4,7 @@ import android.util.Log
 import android.util.Size
 import android.view.Surface
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.LifecycleCameraController
@@ -26,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import java.util.concurrent.Executors
 
 @Composable
 fun CameraPreview(
@@ -56,7 +58,7 @@ fun CameraPreview(
                             // Unbind all use cases first
                             cameraProvider.unbindAll()
 
-                            // Create preview use case with target resolution only
+                            // Create preview use case with target resolution
                             val previewBuilder =
                                     Preview.Builder()
                                             .setTargetResolution(resolution)
@@ -66,20 +68,42 @@ fun CameraPreview(
 
                             val previewUseCase = previewBuilder.build()
 
-                            // Set surface provider
+                            // Create image analysis use case with same target resolution
+                            val imageAnalysisBuilder =
+                                    ImageAnalysis.Builder()
+                                            .setTargetResolution(resolution)
+                                            .setTargetRotation(Surface.ROTATION_0)
+                                            .setBackpressureStrategy(
+                                                    ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+                                            )
+
+                            val imageAnalysisUseCase = imageAnalysisBuilder.build()
+
+                            // Set up the analyzer
+                            val analyzer = CameraPreviewAnalyzer()
+                            imageAnalysisUseCase.setAnalyzer(
+                                    Executors.newSingleThreadExecutor(),
+                                    analyzer
+                            )
+
+                            // Set surface provider for preview
                             previewUseCase.setSurfaceProvider(preview.surfaceProvider)
 
-                            // Bind to lifecycle with back camera
+                            // Bind both use cases to lifecycle with back camera
                             val camera =
                                     cameraProvider.bindToLifecycle(
                                             lifecycleOwner,
                                             CameraSelector.DEFAULT_BACK_CAMERA,
-                                            previewUseCase
+                                            previewUseCase,
+                                            imageAnalysisUseCase
                                     )
 
                             // Log actual resolution info
                             camera.cameraInfo.let { info ->
-                                Log.d("CameraPreview", "Camera bound successfully")
+                                Log.d(
+                                        "CameraPreview",
+                                        "Camera bound successfully with preview and analysis"
+                                )
                             }
 
                             onResolutionChange(resolution)
