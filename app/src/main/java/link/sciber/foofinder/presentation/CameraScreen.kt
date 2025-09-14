@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.presentation.components.ResolutionSelectionDialog
 import link.sciber.foofinder.utils.CameraResolutionUtils
 
@@ -36,6 +37,9 @@ fun CameraScreen() {
     var currentResolution by remember { mutableStateOf<Size?>(null) }
     var showResolutionDialog by remember { mutableStateOf(false) }
 
+    // Detection state
+    var currentDetection by remember { mutableStateOf<Detection?>(null) }
+
     // Initialize resolutions when screen is first created
     LaunchedEffect(Unit) {
         val resolutions = CameraResolutionUtils.getAvailableResolutions(context)
@@ -46,11 +50,13 @@ fun CameraScreen() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Camera Preview (pure presentation component)
+        // Camera Preview with Detection Integration
         CameraPreview(
                 controller = controller,
                 currentResolution = currentResolution,
                 onResolutionChange = { resolution -> currentResolution = resolution },
+                currentDetection = currentDetection,
+                onDetectionResult = { detection -> currentDetection = detection },
                 modifier = Modifier.fillMaxSize()
         )
 
@@ -75,6 +81,33 @@ fun CameraScreen() {
             ) {
                 Text(
                         text = CameraResolutionUtils.formatResolution(resolution),
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
+
+        // Detection Info Display (Top-right corner)
+        currentDetection?.let { detection ->
+            val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
+            Card(
+                    modifier =
+                            Modifier.align(Alignment.TopEnd)
+                                    .padding(
+                                            start = 16.dp,
+                                            top =
+                                                    16.dp +
+                                                            navigationBarsPadding
+                                                                    .calculateTopPadding(),
+                                            end = 16.dp,
+                                            bottom = 16.dp
+                                    ),
+                    colors =
+                            CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.7f))
+            ) {
+                Text(
+                        text = "Objects: ${detection.boundingBoxes.size}",
                         color = Color.White,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(12.dp)
