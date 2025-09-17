@@ -50,7 +50,7 @@ fun CameraPreview(
     LaunchedEffect(Unit) {
         try {
             // Use the actual model file in assets
-            detector = FooDetector(context, "deepoo-YOLO11n-quant.tflite")
+            detector = FooDetector(context, "models/best_plain_float16.tflite")
             Log.d("CameraPreview", "FooDetector initialized successfully")
         } catch (e: Exception) {
             Log.e("CameraPreview", "Failed to initialize FooDetector", e)

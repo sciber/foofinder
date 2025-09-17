@@ -13,6 +13,7 @@ import link.sciber.foofinder.domain.Detector
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
+import org.tensorflow.lite.support.common.ops.CastOp
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
@@ -22,7 +23,7 @@ import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 class FooDetector(
         private val context: Context,
         modelPath: String,
-        private val confThreshold: Float = 0.6f,
+        private val confThreshold: Float = 0.8f,
         private val iouThreshold: Float = 0.45f
 ) : Detector {
     private var interpreter: Interpreter? = null
@@ -59,14 +60,17 @@ class FooDetector(
             // Create image processor for YOLO input (normalize to [0,1])
             imageProcessor =
                     ImageProcessor.Builder()
-                        .add(
-                            ResizeOp(
-                                modelInputShape[1], // height
-                                modelInputShape[2], // width
-                                ResizeOp.ResizeMethod.BILINEAR
+                            .add(
+                                    ResizeOp(
+                                            modelInputShape[1], // height
+                                            modelInputShape[2], // width
+                                            ResizeOp.ResizeMethod.BILINEAR
+                                    )
                             )
-                        )
-                        .build()
+                            // Match LiteRT preprocessing: normalize to [0,1] and cast to FLOAT32
+                            .add(NormalizeOp(0f, 255f))
+                            .add(CastOp(DataType.FLOAT32))
+                            .build()
 
             Log.d(TAG, "Model loaded successfully")
             Log.d(TAG, "Input shape: ${modelInputShape.contentToString()}")
@@ -87,13 +91,11 @@ class FooDetector(
 
             // Detection area is a square from the top the image
             val detectionAreaSide = min(originalWidth, originalHeight).toFloat()
-            val detectionArea = DetectionArea(
-                0f,
-                0f,
-                detectionAreaSide,
-                detectionAreaSide
+            val detectionArea = DetectionArea(0f, 0f, detectionAreaSide, detectionAreaSide)
+            Log.d(
+                    TAG,
+                    "Detection area: ${detectionArea.width}x${detectionArea.height}, startX: ${detectionArea.startX}, startY: ${detectionArea.startY}"
             )
-            Log.d(TAG, "Detection area: ${detectionArea.width}x${detectionArea.height}, startX: ${detectionArea.startX}, startY: ${detectionArea.startY}")
             // Preprocess image
             val input = preprocessImage(image, detectionArea)
             val output = TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
@@ -107,7 +109,9 @@ class FooDetector(
             val boundingBoxes =
                     parseYoloOutput(
                             output.floatArray,
-                            detectionArea
+                            detectionArea,
+                            modelInputShape[1], // input height
+                            modelInputShape[2] // input width
                     )
 
             Log.d(
@@ -123,84 +127,95 @@ class FooDetector(
     }
 
     private fun preprocessImage(image: Bitmap, detectionArea: DetectionArea): TensorImage {
-        val croppedImage = Bitmap.createBitmap(
-            image,
-            detectionArea.startX.toInt(),
-            detectionArea.startY.toInt(),
-            detectionArea.width.toInt(),
-            detectionArea.height.toInt()
-        )
+        val croppedImage =
+                Bitmap.createBitmap(
+                        image,
+                        detectionArea.startX.toInt(),
+                        detectionArea.startY.toInt(),
+                        detectionArea.width.toInt(),
+                        detectionArea.height.toInt()
+                )
 
         val tensorImage = TensorImage(modelInputDataType)
         tensorImage.load(croppedImage)
 
         val processedImage = imageProcessor.process(tensorImage)
 
-
-        // Normalize to [0, 1] for YOLO
-        val buffer = processedImage.buffer
-        val floatBuffer = buffer.asFloatBuffer()
-        val floatArray = FloatArray(floatBuffer.remaining())
-        floatBuffer.get(floatArray)
-
-        // Normalize pixel values to [0, 1]
-        for (i in floatArray.indices) {
-            floatArray[i] = floatArray[i] / 255.0f
-        }
-
-        floatBuffer.rewind()
-        floatBuffer.put(floatArray)
-        buffer.rewind()
-
         return processedImage
     }
 
     private fun parseYoloOutput(
             output: FloatArray,
-            detectionArea: DetectionArea
+            detectionArea: DetectionArea,
+            inputHeight: Int,
+            inputWidth: Int
     ): List<BoundingBox> {
         val predictions = mutableListOf<BoundingBox>()
 
         try {
-            // YOLOv11 output format: [batch, 5, 8400] -> flattened to [5 * 8400]
-            // Where 5 = [x_center, y_center, width, height, confidence]
-            val numDetections = output.size / 5
+            // LiteRT / YOLOv10n exported TFLite output format:
+            // Shape: [1, numElements, numChannel] where numChannel = 6
+            // Per detection layout: [x1, y1, x2, y2, confidence, classId] with all
+            // coordinates normalized to [0,1] relative to model input size.
+            val numElements = modelOutputShape[1]
+            val numChannel = modelOutputShape[2]
 
             Log.d(
                     TAG,
-                    "Processing $numDetections detections from output array of size ${output.size}"
+                    "Processing $numElements detections from output array of size ${output.size}"
             )
 
-            for (i in 0 until numDetections) {
-                val baseIndex = i * 5
-                if (baseIndex + 4 < output.size) {
-                    val xCenter = output[baseIndex]
-                    val yCenter = output[baseIndex + 1]
-                    val width = output[baseIndex + 2]
-                    val height = output[baseIndex + 3]
-                    val confidence = output[baseIndex + 4]
+            // Log raw tensor values for debugging
+            Log.d(
+                    TAG,
+                    "Raw tensor sample: [0]=$output[0], [1]=$output[1], [2]=$output[2], [3]=$output[3], [4]=$output[4]"
+            )
+
+            for (r in 0 until numElements) {
+                val baseIndex = r * numChannel
+                if (baseIndex + 5 < output.size) {
+                    val x1 = output[baseIndex] // normalized x1
+                    val y1 = output[baseIndex + 1] // normalized y1
+                    val x2 = output[baseIndex + 2] // normalized x2
+                    val y2 = output[baseIndex + 3] // normalized y2
+                    val confidence = output[baseIndex + 4] // object confidence
+                    val clsId = output[baseIndex + 5].toInt()
 
                     if (confidence >= confThreshold && !confidence.isNaN()) {
-                        // Convert from normalized coordinates to pixel coordinates
-                        val x1 = ((xCenter - width / 2) * detectionArea.width).coerceIn(0f, detectionArea.width) + detectionArea.startX
-                        val y1 = ((yCenter - height / 2) * detectionArea.height).coerceIn(0f, detectionArea.height) + detectionArea.startY
-                        val x2 = ((xCenter + width / 2) * detectionArea.width).coerceIn(0f, detectionArea.width) + detectionArea.startX
-                        val y2 = ((yCenter + height / 2) * detectionArea.height).coerceIn(0f, detectionArea.height) + detectionArea.startY
+                        // Debug logging for first few detections
+                        if (predictions.size < 5) {
+                            Log.d(
+                                    TAG,
+                                    "CORNER Detection $r: conf=$confidence, x1=$x1, y1=$y1, x2=$x2, y2=$y2, cls=$clsId"
+                            )
+                        }
 
-                        val boxWidth = x2 - x1
-                        val boxHeight = y2 - y1
+                        // Convert from normalized coordinates (relative to cropped detection area)
+                        // to pixel coordinates in the original image space by scaling with
+                        // detectionArea width/height and offsetting by startX/startY.
+                        val areaW = detectionArea.width
+                        val areaH = detectionArea.height
+                        val areaX = detectionArea.startX
+                        val areaY = detectionArea.startY
 
-                        // Skip invalid boxes
+                        val pixelX1 = (areaX + x1 * areaW).coerceIn(0f, areaX + areaW)
+                        val pixelY1 = (areaY + y1 * areaH).coerceIn(0f, areaY + areaH)
+                        val pixelX2 = (areaX + x2 * areaW).coerceIn(0f, areaX + areaW)
+                        val pixelY2 = (areaY + y2 * areaH).coerceIn(0f, areaY + areaH)
+
+                        val boxWidth = pixelX2 - pixelX1
+                        val boxHeight = pixelY2 - pixelY1
+
                         if (boxWidth > 0 && boxHeight > 0) {
                             predictions.add(
                                     BoundingBox(
-                                            startX = x1,
-                                            startY = y1,
+                                            startX = pixelX1,
+                                            startY = pixelY1,
                                             width = boxWidth,
                                             height = boxHeight,
                                             confidence = confidence,
-                                            classId = 0, // Single class (poo)
-                                            className = "poo"
+                                            classId = clsId,
+                                            className = if (clsId == 0) "poo" else "unknown"
                                     )
                             )
                         }
@@ -213,7 +228,6 @@ class FooDetector(
                     "Found ${predictions.size} valid predictions above confidence threshold $confThreshold"
             )
 
-            // Apply Non-Maximum Suppression if we have multiple predictions
             return if (predictions.size > 1) {
                 applyNMS(predictions, iouThreshold)
             } else {

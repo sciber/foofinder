@@ -168,17 +168,134 @@ class CameraPreviewAnalyzer(
             displayHeight: Int,
             rotationDegrees: Int
     ): Detection {
-        // For now, return detection as-is since we're working with sensor coordinates
-        // In the future, you might want to transform coordinates based on rotation
-        // and coordinate system differences between analyzer and preview
+        // Portrait-only handling: analyzer receives sensor-native landscape frames.
+        // We rotate detections to portrait display (rotationDegrees typically 90), then scale.
+        val norm = ((rotationDegrees % 360) + 360) % 360
 
-        return when (rotationDegrees) {
-            90, 270 -> {
-                // If rotation is needed, transform coordinates here
-                // For now, keeping original coordinates
-                detection
-            }
-            else -> detection
+        // Base size in display orientation after rotation
+        val (baseW, baseH) =
+                when (norm) {
+                    90, 270 -> bitmapHeight to bitmapWidth
+                    else -> bitmapWidth to bitmapHeight
+                }
+
+        fun rotateBox90(
+                x: Float,
+                y: Float,
+                w: Float,
+                h: Float
+        ): link.sciber.foofinder.domain.BoundingBox {
+            // 90° CW rotation into portrait display space
+            val newX = baseW.toFloat() - (y + h)
+            val newY = x
+            return link.sciber.foofinder.domain.BoundingBox(
+                    startX = newX,
+                    startY = newY,
+                    width = h,
+                    height = w,
+                    confidence = 0f,
+                    classId = 0,
+                    className = "poo"
+            )
         }
+
+        fun rotateArea90(
+                area: link.sciber.foofinder.domain.DetectionArea
+        ): link.sciber.foofinder.domain.DetectionArea {
+            val newX = baseW.toFloat() - (area.startY + area.height)
+            val newY = area.startX
+            return link.sciber.foofinder.domain.DetectionArea(
+                    startX = newX,
+                    startY = newY,
+                    width = area.height,
+                    height = area.width
+            )
+        }
+
+        val rotatedBoxes =
+                when (norm) {
+                    90 ->
+                            detection.boundingBoxes.map { b ->
+                                val rb = rotateBox90(b.startX, b.startY, b.width, b.height)
+                                b.copy(
+                                        startX = rb.startX,
+                                        startY = rb.startY,
+                                        width = rb.width,
+                                        height = rb.height
+                                )
+                            }
+                    0 -> detection.boundingBoxes
+                    180 ->
+                            detection.boundingBoxes.map { b ->
+                                val newX = baseW.toFloat() - (b.startX + b.width)
+                                val newY = baseH.toFloat() - (b.startY + b.height)
+                                b.copy(startX = newX, startY = newY)
+                            }
+                    270 ->
+                            detection.boundingBoxes.map { b ->
+                                val newX = b.startY
+                                val newY = baseH.toFloat() - (b.startX + b.width)
+                                b.copy(
+                                        startX = newX,
+                                        startY = newY,
+                                        width = b.height,
+                                        height = b.width
+                                )
+                            }
+                    else -> detection.boundingBoxes
+                }
+
+        val rotatedArea =
+                when (norm) {
+                    90 -> rotateArea90(detection.area)
+                    0 -> detection.area
+                    180 -> {
+                        val a = detection.area
+                        link.sciber.foofinder.domain.DetectionArea(
+                                startX = baseW.toFloat() - (a.startX + a.width),
+                                startY = baseH.toFloat() - (a.startY + a.height),
+                                width = a.width,
+                                height = a.height
+                        )
+                    }
+                    270 -> {
+                        val a = detection.area
+                        link.sciber.foofinder.domain.DetectionArea(
+                                startX = a.startY,
+                                startY = baseH.toFloat() - (a.startX + a.width),
+                                width = a.height,
+                                height = a.width
+                        )
+                    }
+                    else -> detection.area
+                }
+
+        val scaleX = displayWidth.toFloat() / baseW.toFloat()
+        val scaleY = displayHeight.toFloat() / baseH.toFloat()
+
+        Log.d(
+                TAG,
+                "transformDetectionCoordinates: rotationDegrees=$rotationDegrees, bitmap=${bitmapWidth}x${bitmapHeight}, base=${baseW}x${baseH}, display=${displayWidth}x${displayHeight}, scale=($scaleX,$scaleY)"
+        )
+
+        val scaledBoxes =
+                rotatedBoxes.map { box ->
+                    box.copy(
+                            startX = box.startX * scaleX,
+                            startY = box.startY * scaleY,
+                            width = box.width * scaleX,
+                            height = box.height * scaleY
+                    )
+                }
+
+        val scaledArea =
+                link.sciber.foofinder.domain.DetectionArea(
+                        startX = rotatedArea.startX * scaleX,
+                        startY = rotatedArea.startY * scaleY,
+                        width = rotatedArea.width * scaleX,
+                        height = rotatedArea.height * scaleY
+                )
+
+        return Detection(scaledBoxes, scaledArea)
     }
 }
