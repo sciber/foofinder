@@ -11,8 +11,11 @@ import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -163,14 +167,64 @@ fun CameraPreview(
                 )
             }
 
-            // Detection Overlay
+            // Detection Overlay + Stats (positioned relative to overlay size)
             currentDetection?.let { detection ->
-                DetectionOverlay(
-                        detection = detection,
-                        sourceWidth = resolution.width,
-                        sourceHeight = resolution.height,
-                        modifier = Modifier.fillMaxSize().aspectRatio(aspectRatio)
-                )
+                BoxWithConstraints(modifier = Modifier.fillMaxSize().aspectRatio(aspectRatio)) {
+                    // Draw boxes overlay
+                    DetectionOverlay(
+                            detection = detection,
+                            sourceWidth = resolution.width,
+                            sourceHeight = resolution.height,
+                            modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Compute vertical offset for the stats card (just below detection area)
+                    val area = detection.area
+                    val fracBelowY =
+                            ((area.startY + area.height) / resolution.height.toFloat()).coerceIn(
+                                    0f,
+                                    1f
+                            )
+                    val offsetY = (maxHeight * fracBelowY) + 8.dp
+
+                    // Render compact stats card (wrap content) offset from top-left of overlay
+                    androidx.compose.material3.Card(
+                            modifier =
+                                    Modifier.align(Alignment.TopEnd)
+                                            .padding(end = 8.dp)
+                                            .offset(y = offsetY),
+                            colors =
+                                    androidx.compose.material3.CardDefaults.cardColors(
+                                            containerColor = Color.Black.copy(alpha = 0.7f)
+                                    )
+                    ) {
+                        val filteredOut =
+                                (detection.rawDetections - detection.afterNmsDetections)
+                                        .coerceAtLeast(0)
+                        val fpsText =
+                                if (detection.fps >= 0f) String.format("%.1f", detection.fps)
+                                else "-"
+                        val infText =
+                                if (detection.inferenceMs >= 0) "${detection.inferenceMs} ms"
+                                else "-"
+                        val content =
+                                """
+                            FPS: $fpsText
+                            Inference: $infText
+                            Objects: ${detection.afterNmsDetections} (kept)
+                            NMS filtered/raw: $filteredOut/${detection.rawDetections}
+                        """.trimIndent()
+
+                        androidx.compose.material3.Text(
+                                text = content,
+                                color = Color.White,
+                                style =
+                                        androidx.compose.material3.MaterialTheme.typography
+                                                .bodyMedium,
+                                modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
             }
         }
                 ?: run {

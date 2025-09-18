@@ -102,24 +102,36 @@ class FooDetector(
 
             Log.d(TAG, "Processed image: ${modelInputShape[1]}x${modelInputShape[2]}")
 
-            // Run inference
+            // Run inference with timing
+            val t0 = System.nanoTime()
             interpreter!!.run(input.buffer, output.buffer)
+            val t1 = System.nanoTime()
+            val inferenceMs = ((t1 - t0) / 1_000_000L)
 
             // Parse YOLO output
-            val boundingBoxes =
+            val parsed =
                     parseYoloOutput(
                             output.floatArray,
                             detectionArea,
                             modelInputShape[1], // input height
                             modelInputShape[2] // input width
                     )
+            val boundingBoxes = parsed.boxes
+            val rawDetections = parsed.rawCount
 
             Log.d(
                     TAG,
                     "Detected ${boundingBoxes.size} objects above confidence threshold $confThreshold"
             )
 
-            Detection(boundingBoxes = boundingBoxes, area = detectionArea)
+            Detection(
+                    boundingBoxes = boundingBoxes,
+                    area = detectionArea,
+                    inferenceMs = inferenceMs,
+                    fps = -1f,
+                    rawDetections = rawDetections,
+                    afterNmsDetections = boundingBoxes.size
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error during detection", e)
             Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
@@ -144,13 +156,16 @@ class FooDetector(
         return processedImage
     }
 
+    private data class ParsedResult(val boxes: List<BoundingBox>, val rawCount: Int)
+
     private fun parseYoloOutput(
             output: FloatArray,
             detectionArea: DetectionArea,
             inputHeight: Int,
             inputWidth: Int
-    ): List<BoundingBox> {
+    ): ParsedResult {
         val predictions = mutableListOf<BoundingBox>()
+        var rawAboveThreshold = 0
 
         try {
             // LiteRT / YOLOv10n exported TFLite output format:
@@ -182,6 +197,7 @@ class FooDetector(
                     val clsId = output[baseIndex + 5].toInt()
 
                     if (confidence >= confThreshold && !confidence.isNaN()) {
+                        rawAboveThreshold += 1
                         // Debug logging for first few detections
                         if (predictions.size < 5) {
                             Log.d(
@@ -228,14 +244,18 @@ class FooDetector(
                     "Found ${predictions.size} valid predictions above confidence threshold $confThreshold"
             )
 
-            return if (predictions.size > 1) {
-                applyNMS(predictions, iouThreshold)
-            } else {
-                predictions
-            }
+//            val finalBoxes =
+//                    if (predictions.size > 1) {
+//                        applyNMS(predictions, iouThreshold)
+//                    } else {
+//                        predictions
+//                    }
+            val finalBoxes = predictions
+
+            return ParsedResult(finalBoxes, rawAboveThreshold)
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing YOLO output", e)
-            return emptyList()
+            return ParsedResult(emptyList(), 0)
         }
     }
 

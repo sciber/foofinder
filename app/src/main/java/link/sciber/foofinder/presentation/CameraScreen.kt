@@ -30,102 +30,80 @@ import link.sciber.foofinder.utils.CameraResolutionUtils
 
 @Composable
 fun CameraScreen() {
-    val context = LocalContext.current
-    val controller = remember { LifecycleCameraController(context) }
+        val context = LocalContext.current
+        val controller = remember { LifecycleCameraController(context) }
 
-    var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
-    var currentResolution by remember { mutableStateOf<Size?>(null) }
-    var showResolutionDialog by remember { mutableStateOf(false) }
+        var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
+        var currentResolution by remember { mutableStateOf<Size?>(null) }
+        var showResolutionDialog by remember { mutableStateOf(false) }
 
-    // Detection state
-    var currentDetection by remember { mutableStateOf<Detection?>(null) }
+        // Detection state
+        var currentDetection by remember { mutableStateOf<Detection?>(null) }
 
-    // Initialize resolutions when screen is first created
-    LaunchedEffect(Unit) {
-        val resolutions = CameraResolutionUtils.getAvailableResolutions(context)
-        availableResolutions = CameraResolutionUtils.sortResolutionsByWidth(resolutions)
-        if (currentResolution == null && resolutions.isNotEmpty()) {
-            currentResolution = CameraResolutionUtils.findBestDefaultResolution(resolutions)
+        // Initialize resolutions when screen is first created
+        LaunchedEffect(Unit) {
+                val resolutions = CameraResolutionUtils.getAvailableResolutions(context)
+                availableResolutions = CameraResolutionUtils.sortResolutionsByWidth(resolutions)
+                if (currentResolution == null && resolutions.isNotEmpty()) {
+                        currentResolution =
+                                CameraResolutionUtils.findBestDefaultResolution(resolutions)
+                }
         }
-    }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Camera Preview with Detection Integration
-        CameraPreview(
-                controller = controller,
-                currentResolution = currentResolution,
-                onResolutionChange = { resolution -> currentResolution = resolution },
-                currentDetection = currentDetection,
-                onDetectionResult = { detection -> currentDetection = detection },
-                modifier = Modifier.fillMaxSize()
-        )
-
-        // Clickable Resolution Display (Bottom-left corner, avoiding system UI)
-        currentResolution?.let { resolution ->
-            val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
-            Card(
-                    modifier =
-                            Modifier.align(Alignment.BottomStart)
-                                    .padding(
-                                            start = 16.dp,
-                                            bottom =
-                                                    16.dp +
-                                                            navigationBarsPadding
-                                                                    .calculateBottomPadding(),
-                                            end = 16.dp,
-                                            top = 16.dp
-                                    )
-                                    .clickable { showResolutionDialog = true },
-                    colors =
-                            CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.7f))
-            ) {
-                Text(
-                        text = CameraResolutionUtils.formatResolution(resolution),
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(12.dp)
+        Box(modifier = Modifier.fillMaxSize()) {
+                // Camera Preview with Detection Integration
+                CameraPreview(
+                        controller = controller,
+                        currentResolution = currentResolution,
+                        onResolutionChange = { resolution -> currentResolution = resolution },
+                        currentDetection = currentDetection,
+                        onDetectionResult = { detection -> currentDetection = detection },
+                        modifier = Modifier.fillMaxSize()
                 )
-            }
+
+                // Clickable Resolution Display (Bottom-left corner, avoiding system UI)
+                currentResolution?.let { resolution ->
+                        val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
+                        Card(
+                                modifier =
+                                        Modifier.align(Alignment.BottomStart)
+                                                .padding(
+                                                        start = 16.dp,
+                                                        bottom =
+                                                                16.dp +
+                                                                        navigationBarsPadding
+                                                                                .calculateBottomPadding(),
+                                                        end = 16.dp,
+                                                        top = 16.dp
+                                                )
+                                                .clickable { showResolutionDialog = true },
+                                colors =
+                                        CardDefaults.cardColors(
+                                                containerColor = Color.Black.copy(alpha = 0.7f)
+                                        )
+                        ) {
+                                Text(
+                                        text = CameraResolutionUtils.formatResolution(resolution),
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(12.dp)
+                                )
+                        }
+                }
+
+                // (Stats now rendered near detection area in CameraPreview)
         }
 
-        // Detection Info Display (Top-right corner)
-        currentDetection?.let { detection ->
-            val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
-            Card(
-                    modifier =
-                            Modifier.align(Alignment.TopEnd)
-                                    .padding(
-                                            start = 16.dp,
-                                            top =
-                                                    16.dp +
-                                                            navigationBarsPadding
-                                                                    .calculateTopPadding(),
-                                            end = 16.dp,
-                                            bottom = 16.dp
-                                    ),
-                    colors =
-                            CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.7f))
-            ) {
-                Text(
-                        text = "Objects: ${detection.boundingBoxes.size}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(12.dp)
+        // Resolution Selection Dialog
+        if (showResolutionDialog) {
+                ResolutionSelectionDialog(
+                        availableResolutions = availableResolutions,
+                        currentResolution = currentResolution,
+                        onResolutionSelected = { resolution ->
+                                currentResolution = resolution
+                                showResolutionDialog = false
+                        },
+                        onDismiss = { showResolutionDialog = false }
                 )
-            }
         }
-    }
-
-    // Resolution Selection Dialog
-    if (showResolutionDialog) {
-        ResolutionSelectionDialog(
-                availableResolutions = availableResolutions,
-                currentResolution = currentResolution,
-                onResolutionSelected = { resolution ->
-                    currentResolution = resolution
-                    showResolutionDialog = false
-                },
-                onDismiss = { showResolutionDialog = false }
-        )
-    }
 }

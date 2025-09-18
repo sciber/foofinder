@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import java.io.ByteArrayOutputStream
+import java.util.ArrayDeque
 import link.sciber.foofinder.data.detection.FooDetector
 import link.sciber.foofinder.domain.Detection
 
@@ -20,6 +21,10 @@ class CameraPreviewAnalyzer(
     companion object {
         private const val TAG = "CameraPreviewAnalyzer"
     }
+
+    // Rolling FPS window
+    private val timestampWindowMs = 1500L
+    private val timestamps = ArrayDeque<Long>()
 
     init {
         Log.d(TAG, "Analyzer created with detector")
@@ -73,8 +78,22 @@ class CameraPreviewAnalyzer(
                                 rotationDegrees
                         )
 
+                // Compute FPS over a rolling window
+                val now = System.currentTimeMillis()
+                timestamps.addLast(now)
+                while (timestamps.isNotEmpty() && now - timestamps.first() > timestampWindowMs) {
+                    timestamps.removeFirst()
+                }
+                val elapsed = (timestamps.last() - timestamps.first()).coerceAtLeast(1)
+                val fps = if (timestamps.size >= 2) (timestamps.size - 1) * 1000f / elapsed else 0f
+
                 // Callback with detection results
-                onDetectionResult(transformedDetection)
+                onDetectionResult(
+                        transformedDetection.copy(
+                                fps = fps,
+                                afterNmsDetections = transformedDetection.boundingBoxes.size
+                        )
+                )
 
                 Log.d(
                         TAG,
@@ -87,8 +106,12 @@ class CameraPreviewAnalyzer(
                 Log.w(TAG, "Failed to convert ImageProxy to Bitmap")
                 onDetectionResult(
                         Detection(
-                                emptyList(),
-                                link.sciber.foofinder.domain.DetectionArea(0f, 0f, 0f, 0f)
+                                boundingBoxes = emptyList(),
+                                area = link.sciber.foofinder.domain.DetectionArea(0f, 0f, 0f, 0f),
+                                inferenceMs = -1,
+                                fps = 0f,
+                                rawDetections = 0,
+                                afterNmsDetections = 0
                         )
                 )
             }
@@ -96,8 +119,12 @@ class CameraPreviewAnalyzer(
             Log.e(TAG, "Error analyzing image", e)
             onDetectionResult(
                     Detection(
-                            emptyList(),
-                            link.sciber.foofinder.domain.DetectionArea(0f, 0f, 0f, 0f)
+                            boundingBoxes = emptyList(),
+                            area = link.sciber.foofinder.domain.DetectionArea(0f, 0f, 0f, 0f),
+                            inferenceMs = -1,
+                            fps = 0f,
+                            rawDetections = 0,
+                            afterNmsDetections = 0
                     )
             )
         } finally {
@@ -296,6 +323,7 @@ class CameraPreviewAnalyzer(
                         height = rotatedArea.height * scaleY
                 )
 
-        return Detection(scaledBoxes, scaledArea)
+        // Preserve existing metrics (inferenceMs, fps, raw/afterNms counts) by copying
+        return detection.copy(boundingBoxes = scaledBoxes, area = scaledArea)
     }
 }
