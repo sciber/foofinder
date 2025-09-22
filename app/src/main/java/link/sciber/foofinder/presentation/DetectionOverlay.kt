@@ -14,7 +14,7 @@ import link.sciber.foofinder.domain.DetectionArea
 val DETECTION_AREA_COLOR: Color = Color.Red
 const val DETECTION_AREA_STROKE_WIDTH: Float = 4f
 val FOO_CLASS_BOUNDING_BOX_COLOR: Color = Color.Blue
-const val FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 3f
+const val FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 5f
 val NOT_FOO_CLASS_BOUNDING_BOX_COLOR: Color = Color.Magenta
 const val NOT_FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 2f
 val OTHER_CLASS_BOUNDING_BOX_COLOR: Color = Color.Cyan
@@ -28,6 +28,8 @@ fun DetectionOverlay(
         modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier) {
+        val renderStart = System.nanoTime()
+
         val canvasWidth = size.width
         val canvasHeight = size.height
 
@@ -72,6 +74,14 @@ fun DetectionOverlay(
                     style = Stroke(width = boundingBoxStrokeWidth)
             )
         }
+
+        val renderEnd = System.nanoTime()
+        val renderMs = ((renderEnd - renderStart) / 1_000_000L)
+        // Keep tag short to avoid log overhead in render loop
+        android.util.Log.d(
+                "DetectionOverlay",
+                "Timing(render): ${renderMs}ms for ${detection.boundingBoxes.size} boxes"
+        )
     }
 }
 

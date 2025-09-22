@@ -60,14 +60,25 @@ class CameraPreviewAnalyzer(
                     "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, format: $format, rotation: ${rotationDegrees}°"
             )
 
+            // Overall analyze timer
+            val tAnalyzeStart = System.nanoTime()
+
             // Convert ImageProxy to Bitmap
+            val tConvStart = System.nanoTime()
             val bitmap = imageProxyToBitmap(imageProxy)
+            val tConvEnd = System.nanoTime()
+            val convertMs = ((tConvEnd - tConvStart) / 1_000_000L)
+            Log.d(TAG, "Timing(analyze): convert=${convertMs}ms")
 
             if (bitmap != null) {
                 // Run object detection
+                val tDetStart = System.nanoTime()
                 val detection = detector.detect(bitmap)
+                val tDetEnd = System.nanoTime()
+                val detectMs = ((tDetEnd - tDetStart) / 1_000_000L)
 
                 // Transform coordinates if needed based on rotation
+                val tXformStart = System.nanoTime()
                 val transformedDetection =
                         transformDetectionCoordinates(
                                 detection,
@@ -77,6 +88,8 @@ class CameraPreviewAnalyzer(
                                 displayHeight,
                                 rotationDegrees
                         )
+                val tXformEnd = System.nanoTime()
+                val transformMs = ((tXformEnd - tXformStart) / 1_000_000L)
 
                 // Compute FPS over a rolling window
                 val now = System.currentTimeMillis()
@@ -98,6 +111,13 @@ class CameraPreviewAnalyzer(
                 Log.d(
                         TAG,
                         "Detection completed: ${transformedDetection.boundingBoxes.size} objects detected"
+                )
+
+                val tAnalyzeEnd = System.nanoTime()
+                val totalAnalyzeMs = ((tAnalyzeEnd - tAnalyzeStart) / 1_000_000L)
+                Log.d(
+                        TAG,
+                        "Timing(analyze): detect=${detectMs}ms, transform=${transformMs}ms, total=${totalAnalyzeMs}ms"
                 )
 
                 // Clean up bitmap
@@ -137,15 +157,25 @@ class CameraPreviewAnalyzer(
         return try {
             when (imageProxy.format) {
                 ImageFormat.YUV_420_888 -> {
-                    // Convert YUV_420_888 to Bitmap
-                    yuvToBitmap(imageProxy)
+                    // Convert YUV_420_888 to Bitmap with timing
+                    val tYuvStart = System.nanoTime()
+                    val bmp = yuvToBitmap(imageProxy)
+                    val tYuvEnd = System.nanoTime()
+                    val yuvMs = ((tYuvEnd - tYuvStart) / 1_000_000L)
+                    Log.d(TAG, "Timing(convert): YUV->Bitmap=${yuvMs}ms")
+                    bmp
                 }
                 ImageFormat.JPEG -> {
-                    // Convert JPEG to Bitmap
+                    // Convert JPEG to Bitmap with timing
+                    val tJpegStart = System.nanoTime()
                     val buffer = imageProxy.planes[0].buffer
                     val bytes = ByteArray(buffer.remaining())
                     buffer.get(bytes)
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    val tJpegEnd = System.nanoTime()
+                    val jpegMs = ((tJpegEnd - tJpegStart) / 1_000_000L)
+                    Log.d(TAG, "Timing(convert): JPEG->Bitmap=${jpegMs}ms")
+                    bmp
                 }
                 else -> {
                     Log.w(TAG, "Unsupported image format: ${imageProxy.format}")
@@ -160,6 +190,8 @@ class CameraPreviewAnalyzer(
 
     private fun yuvToBitmap(imageProxy: ImageProxy): Bitmap? {
         return try {
+            val tStart = System.nanoTime()
+
             val yBuffer = imageProxy.planes[0].buffer // Y
             val uBuffer = imageProxy.planes[1].buffer // U
             val vBuffer = imageProxy.planes[2].buffer // V
@@ -170,17 +202,33 @@ class CameraPreviewAnalyzer(
 
             val nv21 = ByteArray(ySize + uSize + vSize)
 
+            val tCopyStart = System.nanoTime()
             // U and V are swapped
             yBuffer.get(nv21, 0, ySize)
             vBuffer.get(nv21, ySize, vSize)
             uBuffer.get(nv21, ySize + vSize, uSize)
+            val tCopyEnd = System.nanoTime()
 
             val yuvImage =
                     YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
             val out = ByteArrayOutputStream()
+            val tJpegStart = System.nanoTime()
             yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 100, out)
             val imageBytes = out.toByteArray()
-            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            val tJpegEnd = System.nanoTime()
+
+            val tDecodeStart = System.nanoTime()
+            val bmp = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            val tDecodeEnd = System.nanoTime()
+
+            val tEnd = System.nanoTime()
+
+            Log.d(
+                    TAG,
+                    "Timing(YUV): copy=${((tCopyEnd - tCopyStart) / 1_000_000L)}ms, compress=${((tJpegEnd - tJpegStart) / 1_000_000L)}ms, decode=${((tDecodeEnd - tDecodeStart) / 1_000_000L)}ms, total=${((tEnd - tStart) / 1_000_000L)}ms"
+            )
+
+            bmp
         } catch (e: Exception) {
             Log.e(TAG, "Error converting YUV to Bitmap", e)
             null

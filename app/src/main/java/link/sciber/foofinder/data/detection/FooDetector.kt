@@ -12,6 +12,9 @@ import link.sciber.foofinder.domain.DetectionArea
 import link.sciber.foofinder.domain.Detector
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.CompatibilityList
+import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.common.ops.CastOp
 import org.tensorflow.lite.support.common.ops.NormalizeOp
@@ -20,13 +23,24 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 
+enum class Accelerator {
+    CPU,
+    GPU,
+    NNAPI
+}
+
 class FooDetector(
         private val context: Context,
         modelPath: String,
-        private val confThreshold: Float = 0.8f,
-        private val iouThreshold: Float = 0.45f
+        private val confThreshold: Float = 0.45f,
+        private val iouThreshold: Float = 0.45f,
+        private val accelerator: Accelerator = Accelerator.CPU,
+        private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
 ) : Detector {
     private var interpreter: Interpreter? = null
+    private var gpuDelegate: GpuDelegate? = null
+    private var nnApiDelegate: NnApiDelegate? = null
+    private var activeAccelerator: Accelerator = Accelerator.CPU
 
     // Model input/output details
     private lateinit var modelInputDataType: DataType
@@ -43,11 +57,102 @@ class FooDetector(
     init {
         try {
             val modelBuffer: MappedByteBuffer = FileUtil.loadMappedFile(context, modelPath)
-            val options =
-                    Interpreter.Options().apply {
-                        setNumThreads(1) // Single thread for deterministic behavior
+            val threads = if (numThreads < 1) 1 else numThreads
+
+            // Try preferred accelerator first
+            fun buildOptionsWith(accel: Accelerator): Interpreter.Options {
+                return Interpreter.Options().apply {
+                    setNumThreads(threads)
+                    when (accel) {
+                        Accelerator.GPU -> {
+                            try {
+                                // Only attempt on supported devices
+                                val compat = CompatibilityList()
+                                if (compat.isDelegateSupportedOnThisDevice) {
+                                    gpuDelegate = GpuDelegate()
+                                    addDelegate(gpuDelegate)
+                                    Log.d(TAG, "Using GPU delegate")
+                                } else {
+                                    Log.w(
+                                            TAG,
+                                            "GPU delegate not supported on this device; skipping GPU"
+                                    )
+                                }
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "Failed to create GPU delegate, will fall back", e)
+                            }
+                        }
+                        Accelerator.NNAPI -> {
+                            try {
+                                nnApiDelegate = NnApiDelegate()
+                                addDelegate(nnApiDelegate)
+                                Log.d(TAG, "Using NNAPI delegate")
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "Failed to create NNAPI delegate, will fall back", e)
+                            }
+                        }
+                        Accelerator.CPU -> {
+                            Log.d(TAG, "Using CPU/XNNPACK with $threads threads")
+                        }
                     }
-            interpreter = Interpreter(modelBuffer, options)
+                }
+            }
+
+            // 1) Preferred accel
+            var lastError: Throwable? = null
+            val preferred = buildOptionsWith(accelerator)
+            try {
+                interpreter = Interpreter(modelBuffer, preferred)
+                // If we made it here, preferred accelerator worked
+                activeAccelerator =
+                        when {
+                            gpuDelegate != null -> Accelerator.GPU
+                            nnApiDelegate != null -> Accelerator.NNAPI
+                            else -> Accelerator.CPU
+                        }
+            } catch (e: Throwable) {
+                lastError = e
+                Log.w(
+                        TAG,
+                        "Preferred accelerator failed to initialize interpreter; attempting fallback",
+                        e
+                )
+                // Close any delegates created
+                try {
+                    gpuDelegate?.close()
+                } catch (_: Throwable) {}
+                gpuDelegate = null
+                try {
+                    nnApiDelegate?.close()
+                } catch (_: Throwable) {}
+                nnApiDelegate = null
+
+                // 2) Secondary fallback: CPU
+                try {
+                    val cpuOptions = buildOptionsWith(Accelerator.CPU)
+                    interpreter = Interpreter(modelBuffer, cpuOptions)
+                    lastError = null
+                    activeAccelerator = Accelerator.CPU
+                } catch (e2: Throwable) {
+                    lastError = e2
+                }
+            }
+
+            if (interpreter == null) {
+                throw (lastError
+                        ?: IllegalStateException("Interpreter is null after initialization"))
+            }
+
+            // Final, explicit log about which delegate is in use
+            when (activeAccelerator) {
+                Accelerator.GPU -> Log.d(TAG, "Using GPU delegate (TfLiteGpuDelegateV2)")
+                Accelerator.NNAPI -> Log.d(TAG, "Using NNAPI delegate")
+                Accelerator.CPU ->
+                        Log.d(
+                                TAG,
+                                "Using CPU/XNNPACK delegate with ${if (numThreads < 1) 1 else numThreads} threads"
+                        )
+            }
 
             val inputTensor = interpreter!!.getInputTensor(0)
             modelInputDataType = inputTensor.dataType()
@@ -76,6 +181,20 @@ class FooDetector(
             Log.d(TAG, "Input shape: ${modelInputShape.contentToString()}")
             Log.d(TAG, "Output shape: ${modelOutputShape.contentToString()}")
             Log.d(TAG, "Input dtype: $modelInputDataType, Output dtype: $modelOutputDataType")
+
+            // Warmup: run 1 lightweight inference to stabilize delegate/allocations
+            try {
+                val warmupInput = TensorBuffer.createFixedSize(modelInputShape, modelInputDataType)
+                // Fill zeros (buffer is zeroed by default for newly allocated direct buffers)
+                val warmupOutput =
+                        TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
+                val tWarmStart = System.nanoTime()
+                interpreter!!.run(warmupInput.buffer, warmupOutput.buffer)
+                val tWarmEnd = System.nanoTime()
+                Log.d(TAG, "Warmup inference took ${((tWarmEnd - tWarmStart) / 1_000_000L)} ms")
+            } catch (we: Throwable) {
+                Log.w(TAG, "Warmup inference failed (non-fatal)", we)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize FooDetector", e)
             throw e
@@ -89,6 +208,9 @@ class FooDetector(
 
             Log.d(TAG, "Processing image: ${originalWidth}x${originalHeight}")
 
+            // Overall timer
+            val tOverallStart = System.nanoTime()
+
             // Detection area is a square from the top the image
             val detectionAreaSide = min(originalWidth, originalHeight).toFloat()
             val detectionArea = DetectionArea(0f, 0f, detectionAreaSide, detectionAreaSide)
@@ -97,7 +219,11 @@ class FooDetector(
                     "Detection area: ${detectionArea.width}x${detectionArea.height}, startX: ${detectionArea.startX}, startY: ${detectionArea.startY}"
             )
             // Preprocess image
+            val tPreStart = System.nanoTime()
             val input = preprocessImage(image, detectionArea)
+            val tPreEnd = System.nanoTime()
+            val preprocessMs = ((tPreEnd - tPreStart) / 1_000_000L)
+
             val output = TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
 
             Log.d(TAG, "Processed image: ${modelInputShape[1]}x${modelInputShape[2]}")
@@ -109,6 +235,7 @@ class FooDetector(
             val inferenceMs = ((t1 - t0) / 1_000_000L)
 
             // Parse YOLO output
+            val tPostStart = System.nanoTime()
             val parsed =
                     parseYoloOutput(
                             output.floatArray,
@@ -116,12 +243,22 @@ class FooDetector(
                             modelInputShape[1], // input height
                             modelInputShape[2] // input width
                     )
+            val tPostEnd = System.nanoTime()
+            val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
+
             val boundingBoxes = parsed.boxes
             val rawDetections = parsed.rawCount
 
             Log.d(
                     TAG,
                     "Detected ${boundingBoxes.size} objects above confidence threshold $confThreshold"
+            )
+
+            val tOverallEnd = System.nanoTime()
+            val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
+            Log.d(
+                    TAG,
+                    "Timing: preprocess=${preprocessMs}ms, inference=${inferenceMs}ms, postprocess=${postprocessMs}ms, total=${totalMs}ms"
             )
 
             Detection(
@@ -244,12 +381,12 @@ class FooDetector(
                     "Found ${predictions.size} valid predictions above confidence threshold $confThreshold"
             )
 
-//            val finalBoxes =
-//                    if (predictions.size > 1) {
-//                        applyNMS(predictions, iouThreshold)
-//                    } else {
-//                        predictions
-//                    }
+            //            val finalBoxes =
+            //                    if (predictions.size > 1) {
+            //                        applyNMS(predictions, iouThreshold)
+            //                    } else {
+            //                        predictions
+            //                    }
             val finalBoxes = predictions
 
             return ParsedResult(finalBoxes, rawAboveThreshold)
@@ -296,6 +433,23 @@ class FooDetector(
     fun close() {
         interpreter?.close()
         interpreter = null
+        try {
+            gpuDelegate?.close()
+        } catch (_: Throwable) {}
+        gpuDelegate = null
+        try {
+            nnApiDelegate?.close()
+        } catch (_: Throwable) {}
+        nnApiDelegate = null
         Log.d(TAG, "FooDetector closed")
+    }
+
+    /** Returns a short human-readable label of the active delegate for UI display. */
+    fun activeDelegateLabel(): String {
+        return when (activeAccelerator) {
+            Accelerator.GPU -> "GPU"
+            Accelerator.NNAPI -> "NNAPI"
+            Accelerator.CPU -> "CPU/XNNPACK (${if (numThreads < 1) 1 else numThreads}t)"
+        }
     }
 }
