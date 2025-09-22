@@ -44,6 +44,7 @@ fun CameraPreview(
         currentDetection: Detection?,
         onDetectionResult: (Detection) -> Unit,
         currentConfidenceThreshold: Float,
+        currentMaxBoxes: Int,
         modifier: Modifier = Modifier
 ) {
         val lifecycleOwner = LocalLifecycleOwner.current
@@ -208,9 +209,15 @@ fun CameraPreview(
                                 BoxWithConstraints(
                                         modifier = Modifier.fillMaxSize().aspectRatio(aspectRatio)
                                 ) {
-                                        // Draw boxes overlay
+                                        // Draw boxes overlay (limit to currentMaxBoxes)
+                                        val displayBoxes =
+                                                detection.boundingBoxes.take(
+                                                        currentMaxBoxes.coerceAtLeast(0)
+                                                )
+                                        val displayDetection =
+                                                detection.copy(boundingBoxes = displayBoxes)
                                         DetectionOverlay(
-                                                detection = detection,
+                                                detection = displayDetection,
                                                 sourceWidth = resolution.width,
                                                 sourceHeight = resolution.height,
                                                 modifier = Modifier.fillMaxSize()

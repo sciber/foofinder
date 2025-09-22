@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.presentation.components.ConfidenceThresholdDialog
+import link.sciber.foofinder.presentation.components.MaxBoxesDialog
 import link.sciber.foofinder.presentation.components.ResolutionSelectionDialog
 import link.sciber.foofinder.utils.CameraResolutionUtils
 
@@ -42,6 +43,10 @@ fun CameraScreen() {
         // Confidence threshold state
         var currentConfidenceThreshold by remember { mutableStateOf(0.45f) }
         var showConfidenceDialog by remember { mutableStateOf(false) }
+
+        // Max displayed boxes state
+        var currentMaxBoxes by remember { mutableStateOf(50) }
+        var showMaxBoxesDialog by remember { mutableStateOf(false) }
 
         // Detection state
         var currentDetection by remember { mutableStateOf<Detection?>(null) }
@@ -65,11 +70,11 @@ fun CameraScreen() {
                         currentDetection = currentDetection,
                         onDetectionResult = { detection -> currentDetection = detection },
                         currentConfidenceThreshold = currentConfidenceThreshold,
+                        currentMaxBoxes = currentMaxBoxes,
                         modifier = Modifier.fillMaxSize()
                 )
 
-                // Bottom-left controls: Resolution + Confidence Threshold (threshold positioned
-                // below)
+                // Bottom-left controls: Resolution + Confidence Threshold + Max Boxes
                 val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
                 Column(
                         modifier =
@@ -108,7 +113,7 @@ fun CameraScreen() {
                                 }
                         }
 
-                        // Confidence threshold button (always shown)
+                        // Confidence threshold button
                         Card(
                                 modifier =
                                         Modifier.padding(top = 8.dp).clickable {
@@ -122,6 +127,25 @@ fun CameraScreen() {
                                 val pct = (currentConfidenceThreshold * 100).toInt()
                                 Text(
                                         text = "Confidence: ${pct}%",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(12.dp)
+                                )
+                        }
+
+                        // Max boxes button (positioned below confidence)
+                        Card(
+                                modifier =
+                                        Modifier.padding(top = 8.dp).clickable {
+                                                showMaxBoxesDialog = true
+                                        },
+                                colors =
+                                        CardDefaults.cardColors(
+                                                containerColor = Color.Black.copy(alpha = 0.7f)
+                                        )
+                        ) {
+                                Text(
+                                        text = "Max boxes: $currentMaxBoxes",
                                         color = Color.White,
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier = Modifier.padding(12.dp)
@@ -154,6 +178,18 @@ fun CameraScreen() {
                                 showConfidenceDialog = false
                         },
                         onDismiss = { showConfidenceDialog = false }
+                )
+        }
+
+        // Max Boxes Dialog
+        if (showMaxBoxesDialog) {
+                MaxBoxesDialog(
+                        current = currentMaxBoxes,
+                        onConfirm = { value ->
+                                currentMaxBoxes = value
+                                showMaxBoxesDialog = false
+                        },
+                        onDismiss = { showMaxBoxesDialog = false }
                 )
         }
 }
