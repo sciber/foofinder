@@ -32,7 +32,7 @@ enum class Accelerator {
 class FooDetector(
         private val context: Context,
         modelPath: String,
-        private val confThreshold: Float = 0.45f,
+        private var confThreshold: Float = 0.45f,
         private val iouThreshold: Float = 0.45f,
         private val accelerator: Accelerator = Accelerator.CPU,
         private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
@@ -381,13 +381,12 @@ class FooDetector(
                     "Found ${predictions.size} valid predictions above confidence threshold $confThreshold"
             )
 
-            //            val finalBoxes =
-            //                    if (predictions.size > 1) {
-            //                        applyNMS(predictions, iouThreshold)
-            //                    } else {
-            //                        predictions
-            //                    }
-            val finalBoxes = predictions
+            val finalBoxes =
+                    if (predictions.size > 1) {
+                        applyNMS(predictions, iouThreshold)
+                    } else {
+                        predictions
+                    }
 
             return ParsedResult(finalBoxes, rawAboveThreshold)
         } catch (e: Exception) {
@@ -451,5 +450,11 @@ class FooDetector(
             Accelerator.NNAPI -> "NNAPI"
             Accelerator.CPU -> "CPU/XNNPACK (${if (numThreads < 1) 1 else numThreads}t)"
         }
+    }
+
+    /** Update the detector's confidence threshold at runtime. */
+    fun setConfidenceThreshold(value: Float) {
+        confThreshold = value.coerceIn(0f, 1f)
+        Log.d(TAG, "Confidence threshold set to $confThreshold")
     }
 }

@@ -4,6 +4,7 @@ import android.util.Size
 import androidx.camera.view.LifecycleCameraController
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import link.sciber.foofinder.domain.Detection
+import link.sciber.foofinder.presentation.components.ConfidenceThresholdDialog
 import link.sciber.foofinder.presentation.components.ResolutionSelectionDialog
 import link.sciber.foofinder.utils.CameraResolutionUtils
 
@@ -36,6 +38,10 @@ fun CameraScreen() {
         var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
         var currentResolution by remember { mutableStateOf<Size?>(null) }
         var showResolutionDialog by remember { mutableStateOf(false) }
+
+        // Confidence threshold state
+        var currentConfidenceThreshold by remember { mutableStateOf(0.45f) }
+        var showConfidenceDialog by remember { mutableStateOf(false) }
 
         // Detection state
         var currentDetection by remember { mutableStateOf<Detection?>(null) }
@@ -58,32 +64,64 @@ fun CameraScreen() {
                         onResolutionChange = { resolution -> currentResolution = resolution },
                         currentDetection = currentDetection,
                         onDetectionResult = { detection -> currentDetection = detection },
+                        currentConfidenceThreshold = currentConfidenceThreshold,
                         modifier = Modifier.fillMaxSize()
                 )
 
-                // Clickable Resolution Display (Bottom-left corner, avoiding system UI)
-                currentResolution?.let { resolution ->
-                        val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
+                // Bottom-left controls: Resolution + Confidence Threshold (threshold positioned
+                // below)
+                val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
+                Column(
+                        modifier =
+                                Modifier.align(Alignment.BottomStart)
+                                        .padding(
+                                                start = 16.dp,
+                                                bottom =
+                                                        16.dp +
+                                                                navigationBarsPadding
+                                                                        .calculateBottomPadding(),
+                                                end = 16.dp,
+                                        )
+                ) {
+                        // Resolution button (if resolution known)
+                        currentResolution?.let { resolution ->
+                                Card(
+                                        modifier =
+                                                Modifier.padding(top = 16.dp).clickable {
+                                                        showResolutionDialog = true
+                                                },
+                                        colors =
+                                                CardDefaults.cardColors(
+                                                        containerColor =
+                                                                Color.Black.copy(alpha = 0.7f)
+                                                )
+                                ) {
+                                        Text(
+                                                text =
+                                                        CameraResolutionUtils.formatResolution(
+                                                                resolution
+                                                        ),
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.padding(12.dp)
+                                        )
+                                }
+                        }
+
+                        // Confidence threshold button (always shown)
                         Card(
                                 modifier =
-                                        Modifier.align(Alignment.BottomStart)
-                                                .padding(
-                                                        start = 16.dp,
-                                                        bottom =
-                                                                16.dp +
-                                                                        navigationBarsPadding
-                                                                                .calculateBottomPadding(),
-                                                        end = 16.dp,
-                                                        top = 16.dp
-                                                )
-                                                .clickable { showResolutionDialog = true },
+                                        Modifier.padding(top = 8.dp).clickable {
+                                                showConfidenceDialog = true
+                                        },
                                 colors =
                                         CardDefaults.cardColors(
                                                 containerColor = Color.Black.copy(alpha = 0.7f)
                                         )
                         ) {
+                                val pct = (currentConfidenceThreshold * 100).toInt()
                                 Text(
-                                        text = CameraResolutionUtils.formatResolution(resolution),
+                                        text = "Confidence: ${pct}%",
                                         color = Color.White,
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier = Modifier.padding(12.dp)
@@ -104,6 +142,18 @@ fun CameraScreen() {
                                 showResolutionDialog = false
                         },
                         onDismiss = { showResolutionDialog = false }
+                )
+        }
+
+        // Confidence Threshold Dialog
+        if (showConfidenceDialog) {
+                ConfidenceThresholdDialog(
+                        current = currentConfidenceThreshold,
+                        onConfirm = { value ->
+                                currentConfidenceThreshold = value
+                                showConfidenceDialog = false
+                        },
+                        onDismiss = { showConfidenceDialog = false }
                 )
         }
 }

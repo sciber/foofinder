@@ -43,6 +43,7 @@ fun CameraPreview(
         onResolutionChange: (Size) -> Unit,
         currentDetection: Detection?,
         onDetectionResult: (Detection) -> Unit,
+        currentConfidenceThreshold: Float,
         modifier: Modifier = Modifier
 ) {
         val lifecycleOwner = LocalLifecycleOwner.current
@@ -62,10 +63,18 @@ fun CameraPreview(
                                         accelerator = Accelerator.GPU,
                                         numThreads = 4
                                 )
+                        // Apply initial threshold
+                        detector?.setConfidenceThreshold(currentConfidenceThreshold)
                         Log.d("CameraPreview", "FooDetector initialized successfully")
                 } catch (e: Exception) {
                         Log.e("CameraPreview", "Failed to initialize FooDetector", e)
                 }
+        }
+
+        // Re-apply threshold when it changes
+        LaunchedEffect(currentConfidenceThreshold) {
+                detector?.setConfidenceThreshold(currentConfidenceThreshold)
+                Log.d("CameraPreview", "Applied confidence threshold: $currentConfidenceThreshold")
         }
 
         // Function to apply resolution using ProcessCameraProvider
