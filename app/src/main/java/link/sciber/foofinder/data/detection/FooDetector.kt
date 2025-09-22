@@ -41,6 +41,7 @@ class FooDetector(
     private var gpuDelegate: GpuDelegate? = null
     private var nnApiDelegate: NnApiDelegate? = null
     private var activeAccelerator: Accelerator = Accelerator.CPU
+    private var nmsEnabled: Boolean = true
 
     // Model input/output details
     private lateinit var modelInputDataType: DataType
@@ -382,9 +383,14 @@ class FooDetector(
             )
 
             val finalBoxes =
-                    if (predictions.size > 1) {
+                    if (nmsEnabled && predictions.size > 1) {
                         applyNMS(predictions, iouThreshold)
                     } else {
+                        if (!nmsEnabled)
+                                Log.d(
+                                        TAG,
+                                        "NMS disabled: showing ${predictions.size} raw predictions"
+                                )
                         predictions
                     }
 
@@ -456,5 +462,11 @@ class FooDetector(
     fun setConfidenceThreshold(value: Float) {
         confThreshold = value.coerceIn(0f, 1f)
         Log.d(TAG, "Confidence threshold set to $confThreshold")
+    }
+
+    /** Enable or disable Non-Maximum Suppression at runtime. */
+    fun setNmsEnabled(enabled: Boolean) {
+        nmsEnabled = enabled
+        Log.d(TAG, "NMS enabled set to $nmsEnabled")
     }
 }

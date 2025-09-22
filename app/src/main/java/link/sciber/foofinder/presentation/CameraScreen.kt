@@ -44,6 +44,9 @@ fun CameraScreen() {
         var currentConfidenceThreshold by remember { mutableStateOf(0.45f) }
         var showConfidenceDialog by remember { mutableStateOf(false) }
 
+        // NMS toggle state
+        var currentNmsEnabled by remember { mutableStateOf(true) }
+
         // Max displayed boxes state
         var currentMaxBoxes by remember { mutableStateOf(50) }
         var showMaxBoxesDialog by remember { mutableStateOf(false) }
@@ -71,10 +74,11 @@ fun CameraScreen() {
                         onDetectionResult = { detection -> currentDetection = detection },
                         currentConfidenceThreshold = currentConfidenceThreshold,
                         currentMaxBoxes = currentMaxBoxes,
+                        currentNmsEnabled = currentNmsEnabled,
                         modifier = Modifier.fillMaxSize()
                 )
 
-                // Bottom-left controls: Resolution + Confidence Threshold + Max Boxes
+                // Bottom-left controls: Resolution + Confidence Threshold + NMS + Max Boxes
                 val navigationBarsPadding = WindowInsets.navigationBars.asPaddingValues()
                 Column(
                         modifier =
@@ -133,7 +137,26 @@ fun CameraScreen() {
                                 )
                         }
 
-                        // Max boxes button (positioned below confidence)
+                        // NMS toggle button (between confidence and max boxes)
+                        Card(
+                                modifier =
+                                        Modifier.padding(top = 8.dp).clickable {
+                                                currentNmsEnabled = !currentNmsEnabled
+                                        },
+                                colors =
+                                        CardDefaults.cardColors(
+                                                containerColor = Color.Black.copy(alpha = 0.7f)
+                                        )
+                        ) {
+                                Text(
+                                        text = "NMS: ${if (currentNmsEnabled) "On" else "Off"}",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(12.dp)
+                                )
+                        }
+
+                        // Max boxes button (positioned below NMS)
                         Card(
                                 modifier =
                                         Modifier.padding(top = 8.dp).clickable {

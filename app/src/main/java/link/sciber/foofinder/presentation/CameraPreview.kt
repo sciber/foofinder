@@ -45,6 +45,7 @@ fun CameraPreview(
         onDetectionResult: (Detection) -> Unit,
         currentConfidenceThreshold: Float,
         currentMaxBoxes: Int,
+        currentNmsEnabled: Boolean,
         modifier: Modifier = Modifier
 ) {
         val lifecycleOwner = LocalLifecycleOwner.current
@@ -64,8 +65,9 @@ fun CameraPreview(
                                         accelerator = Accelerator.GPU,
                                         numThreads = 4
                                 )
-                        // Apply initial threshold
+                        // Apply initial configs
                         detector?.setConfidenceThreshold(currentConfidenceThreshold)
+                        detector?.setNmsEnabled(currentNmsEnabled)
                         Log.d("CameraPreview", "FooDetector initialized successfully")
                 } catch (e: Exception) {
                         Log.e("CameraPreview", "Failed to initialize FooDetector", e)
@@ -76,6 +78,12 @@ fun CameraPreview(
         LaunchedEffect(currentConfidenceThreshold) {
                 detector?.setConfidenceThreshold(currentConfidenceThreshold)
                 Log.d("CameraPreview", "Applied confidence threshold: $currentConfidenceThreshold")
+        }
+
+        // Re-apply NMS toggle when it changes
+        LaunchedEffect(currentNmsEnabled) {
+                detector?.setNmsEnabled(currentNmsEnabled)
+                Log.d("CameraPreview", "Applied NMS enabled: $currentNmsEnabled")
         }
 
         // Function to apply resolution using ProcessCameraProvider
