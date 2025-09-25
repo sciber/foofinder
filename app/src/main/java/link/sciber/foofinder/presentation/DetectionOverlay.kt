@@ -28,6 +28,8 @@ val NOT_FOO_CLASS_BOUNDING_BOX_COLOR: Color = Color.Magenta
 const val NOT_FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 2f
 val OTHER_CLASS_BOUNDING_BOX_COLOR: Color = Color.Cyan
 const val OTHER_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 1f
+val BASE_AREA_COLOR: Color = Color.Yellow
+const val BASE_AREA_STROKE_WIDTH: Float = 3f
 
 @Composable
 fun DetectionOverlay(
@@ -50,6 +52,15 @@ fun DetectionOverlay(
                 // Calculate scaling factors
                 val scaleX = canvasWidth / sourceWidth.toFloat()
                 val scaleY = canvasHeight / sourceHeight.toFloat()
+
+                // Base square anchored at top-left (source coordinates 0..min(W,H))
+                val baseSideSource = kotlin.math.min(sourceWidth, sourceHeight).toFloat()
+                drawRect(
+                        color = BASE_AREA_COLOR,
+                        topLeft = Offset(0f, 0f),
+                        size = Size(baseSideSource * scaleX, baseSideSource * scaleY),
+                        style = Stroke(width = BASE_AREA_STROKE_WIDTH)
+                )
 
                 // Transform detection area coordinates
                 val scaledArea = scaleDetectionArea(detection.area, scaleX, scaleY)

@@ -276,6 +276,65 @@ class FooDetector(
         }
     }
 
+    fun getModelInputSize(): Int {
+        return min(modelInputShape[1], modelInputShape[2])
+    }
+
+    /**
+     * Run detection restricted to the provided detectionArea (in source image pixel coordinates).
+     * The area is cropped and then resized to model input size (via existing imageProcessor).
+     */
+    fun detectInArea(image: Bitmap, detectionArea: DetectionArea): Detection {
+        return try {
+            val tOverallStart = System.nanoTime()
+
+            // Preprocess (crop to area -> resize/normalize -> cast)
+            val tPreStart = System.nanoTime()
+            val input = preprocessImage(image, detectionArea)
+            val tPreEnd = System.nanoTime()
+            val preprocessMs = ((tPreEnd - tPreStart) / 1_000_000L)
+
+            val output = TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
+
+            // Inference
+            val t0 = System.nanoTime()
+            interpreter!!.run(input.buffer, output.buffer)
+            val t1 = System.nanoTime()
+            val inferenceMs = ((t1 - t0) / 1_000_000L)
+
+            // Postprocess (map results back to original space using detectionArea offset)
+            val tPostStart = System.nanoTime()
+            val parsed =
+                    parseYoloOutput(
+                            output.floatArray,
+                            detectionArea,
+                            modelInputShape[1], // input height
+                            modelInputShape[2] // input width
+                    )
+            val tPostEnd = System.nanoTime()
+            val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
+
+            val tOverallEnd = System.nanoTime()
+            val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
+            Log.d(
+                    TAG,
+                    "detectInArea: pre=${preprocessMs}ms, infer=${inferenceMs}ms, post=${postprocessMs}ms, total=${totalMs}ms"
+            )
+
+            Detection(
+                    boundingBoxes = parsed.boxes,
+                    area = detectionArea,
+                    inferenceMs = inferenceMs,
+                    fps = -1f,
+                    rawDetections = parsed.rawCount,
+                    afterNmsDetections = parsed.boxes.size
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during detection in area", e)
+            Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
+        }
+    }
+
     private fun preprocessImage(image: Bitmap, detectionArea: DetectionArea): TensorImage {
         val croppedImage =
                 Bitmap.createBitmap(
