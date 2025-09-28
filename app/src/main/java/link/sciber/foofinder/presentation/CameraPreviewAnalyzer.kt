@@ -13,7 +13,6 @@ import java.util.ArrayDeque
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 import link.sciber.foofinder.data.detection.FooDetector
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
@@ -25,7 +24,8 @@ class CameraPreviewAnalyzer(
 
         private var tileIndex: Int = 0
 
-        private enum class ScanStrategy {
+        /** Scanning strategies for object detection. */
+        enum class ScanStrategy {
                 SCALED_SINGLE,
                 ROWS,
                 COLUMNS,
@@ -45,79 +45,56 @@ class CameraPreviewAnalyzer(
                 Log.d(TAG, "Analyzer created with detector")
         }
 
+        /** Update scanning strategy at runtime. */
+        fun setScanStrategy(newStrategy: ScanStrategy) {
+                strategy = newStrategy
+                Log.d(TAG, "Scan strategy set to $newStrategy")
+        }
         override fun analyze(imageProxy: ImageProxy) {
+                fun emptyDetectionResult() =
+                        Detection(
+                                boundingBoxes = emptyList(),
+                                area = DetectionArea(0f, 0f, 0f, 0f),
+                                inferenceMs = -1,
+                                fps = 0f,
+                                rawDetections = 0,
+                                afterNmsDetections = 0
+                        )
+
                 try {
-                        // Get image properties
                         val width = imageProxy.width
                         val height = imageProxy.height
                         val format = imageProxy.format
                         val rotationDegrees = imageProxy.imageInfo.rotationDegrees
 
-                        // Calculate display-oriented dimensions (what user sees in preview)
-                        val displayWidth: Int
-                        val displayHeight: Int
-
-                        when (rotationDegrees) {
-                                90, 270 -> {
-                                        // Portrait mode: swap dimensions
-                                        displayWidth = height
-                                        displayHeight = width
-                                }
-                                else -> {
-                                        // Landscape mode: keep dimensions
-                                        displayWidth = width
-                                        displayHeight = height
-                                }
-                        }
+                        val (displayWidth, displayHeight) =
+                                if (rotationDegrees == 90 || rotationDegrees == 270) height to width
+                                else width to height
 
                         Log.d(
                                 TAG,
-                                "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, format: $format, rotation: ${rotationDegrees}°"
+                                "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, " +
+                                        "format: $format, rotation: ${rotationDegrees}°"
                         )
 
-                        // Overall analyze timer
-                        val tAnalyzeStart = System.nanoTime()
-
-                        // Convert ImageProxy to Bitmap
-                        val tConvStart = System.nanoTime()
+                        val analyzeStart = System.nanoTime()
+                        val convertStart = System.nanoTime()
                         val bitmap = imageProxyToBitmap(imageProxy)
-                        val tConvEnd = System.nanoTime()
-                        val convertMs = ((tConvEnd - tConvStart) / 1_000_000L)
+                        val convertMs = (System.nanoTime() - convertStart) / 1_000_000L
                         Log.d(TAG, "Timing(analyze): convert=${convertMs}ms")
 
                         if (bitmap != null) {
-                                // Run object detection
-                                val tDetStart = System.nanoTime()
+                                val detectStart = System.nanoTime()
+                                val baseSide = min(bitmap.width, bitmap.height)
 
-                                // Base square region anchored at top-left (0,0). If you want
-                                // center, see variant
-                                // below.
-                                val baseSide = minOf(bitmap.width, bitmap.height)
-                                val baseArea =
-                                        link.sciber.foofinder.domain.DetectionArea(
-                                                startX = 0f,
-                                                startY = 0f,
-                                                width = baseSide.toFloat(),
-                                                height = baseSide.toFloat()
-                                        )
-
-                                // Run detection in the chosen tile
                                 val detection =
                                         when (strategy) {
-                                                ScanStrategy.SCALED_SINGLE -> {
-                                                        // Current behavior preserved
+                                                ScanStrategy.SCALED_SINGLE ->
                                                         detector.detect(bitmap)
-                                                }
                                                 ScanStrategy.ROWS, ScanStrategy.COLUMNS -> {
-                                                        val baseSide =
-                                                                min(bitmap.width, bitmap.height)
-                                                        val baseStartX = 0
-                                                        val baseStartY = 0
-
                                                         val tileSize =
                                                                 detector.getModelInputSize()
                                                                         .coerceAtMost(baseSide)
-
                                                         val stepsX =
                                                                 max(
                                                                         1,
@@ -140,8 +117,8 @@ class CameraPreviewAnalyzer(
 
                                                         val area =
                                                                 computeTileArea(
-                                                                        baseStartX = baseStartX,
-                                                                        baseStartY = baseStartY,
+                                                                        baseStartX = 0,
+                                                                        baseStartY = 0,
                                                                         baseSide = baseSide,
                                                                         tileSize = tileSize,
                                                                         index = tileIndex,
@@ -150,17 +127,14 @@ class CameraPreviewAnalyzer(
                                                                                 rotationDegrees
                                                                 )
 
-                                                        // Advance tile for next frame
-                                                        tileIndex =
-                                                                if (totalTiles > 0)
+                                                        if (totalTiles > 0) {
+                                                                tileIndex =
                                                                         (tileIndex + 1) % totalTiles
-                                                                else 0
+                                                        }
 
                                                         detector.detectInArea(bitmap, area)
                                                 }
                                                 ScanStrategy.RANDOM -> {
-                                                        val baseSide =
-                                                                min(bitmap.width, bitmap.height)
                                                         val tileSize =
                                                                 detector.getModelInputSize()
                                                                         .coerceAtMost(baseSide)
@@ -201,15 +175,13 @@ class CameraPreviewAnalyzer(
                                                                         rotationDegrees =
                                                                                 rotationDegrees
                                                                 )
+
                                                         detector.detectInArea(bitmap, area)
                                                 }
                                         }
 
-                                val tDetEnd = System.nanoTime()
-                                val detectMs = ((tDetEnd - tDetStart) / 1_000_000L)
-
-                                // Transform coordinates if needed based on rotation
-                                val tXformStart = System.nanoTime()
+                                val detectMs = (System.nanoTime() - detectStart) / 1_000_000L
+                                val transformStart = System.nanoTime()
                                 val transformedDetection =
                                         transformDetectionCoordinates(
                                                 detection,
@@ -219,10 +191,8 @@ class CameraPreviewAnalyzer(
                                                 displayHeight,
                                                 rotationDegrees
                                         )
-                                val tXformEnd = System.nanoTime()
-                                val transformMs = ((tXformEnd - tXformStart) / 1_000_000L)
+                                val transformMs = (System.nanoTime() - transformStart) / 1_000_000L
 
-                                // Compute FPS over a rolling window
                                 val now = System.currentTimeMillis()
                                 timestamps.addLast(now)
                                 while (timestamps.isNotEmpty() &&
@@ -236,7 +206,6 @@ class CameraPreviewAnalyzer(
                                                 (timestamps.size - 1) * 1000f / elapsed
                                         else 0f
 
-                                // Callback with detection results
                                 onDetectionResult(
                                         transformedDetection.copy(
                                                 fps = fps,
@@ -250,54 +219,21 @@ class CameraPreviewAnalyzer(
                                         "Detection completed: ${transformedDetection.boundingBoxes.size} objects detected"
                                 )
 
-                                val tAnalyzeEnd = System.nanoTime()
-                                val totalAnalyzeMs = ((tAnalyzeEnd - tAnalyzeStart) / 1_000_000L)
+                                val analyzeMs = (System.nanoTime() - analyzeStart) / 1_000_000L
                                 Log.d(
                                         TAG,
-                                        "Timing(analyze): detect=${detectMs}ms, transform=${transformMs}ms, total=${totalAnalyzeMs}ms"
+                                        "Timing(analyze): detect=${detectMs}ms, transform=${transformMs}ms, total=${analyzeMs}ms"
                                 )
 
-                                // Clean up bitmap
                                 bitmap.recycle()
                         } else {
                                 Log.w(TAG, "Failed to convert ImageProxy to Bitmap")
-                                onDetectionResult(
-                                        Detection(
-                                                boundingBoxes = emptyList(),
-                                                area =
-                                                        link.sciber.foofinder.domain.DetectionArea(
-                                                                0f,
-                                                                0f,
-                                                                0f,
-                                                                0f
-                                                        ),
-                                                inferenceMs = -1,
-                                                fps = 0f,
-                                                rawDetections = 0,
-                                                afterNmsDetections = 0
-                                        )
-                                )
+                                onDetectionResult(emptyDetectionResult())
                         }
                 } catch (e: Exception) {
                         Log.e(TAG, "Error analyzing image", e)
-                        onDetectionResult(
-                                Detection(
-                                        boundingBoxes = emptyList(),
-                                        area =
-                                                link.sciber.foofinder.domain.DetectionArea(
-                                                        0f,
-                                                        0f,
-                                                        0f,
-                                                        0f
-                                                ),
-                                        inferenceMs = -1,
-                                        fps = 0f,
-                                        rawDetections = 0,
-                                        afterNmsDetections = 0
-                                )
-                        )
+                        onDetectionResult(emptyDetectionResult())
                 } finally {
-                        // Always close the image to prevent memory leaks
                         imageProxy.close()
                 }
         }
@@ -310,29 +246,21 @@ class CameraPreviewAnalyzer(
                 index: Int,
                 strategy: ScanStrategy,
                 rotationDegrees: Int
-        ): link.sciber.foofinder.domain.DetectionArea {
+        ): DetectionArea {
                 val stepsX = max(1, ceil(baseSide.toFloat() / tileSize).toInt())
                 val stepsY = max(1, ceil(baseSide.toFloat() / tileSize).toInt())
 
-                // Minimal uniform overlap to cover the base square fully
-                val strideX = if (stepsX > 1) (baseSide - tileSize).toFloat() / (stepsX - 1) else 0f
-                val strideY = if (stepsY > 1) (baseSide - tileSize).toFloat() / (stepsY - 1) else 0f
-
                 if (strategy == ScanStrategy.RANDOM) {
                         val maxOffset = (baseSide - tileSize).coerceAtLeast(0)
-                        val randomOffsetX =
+                        val offsetX =
                                 if (maxOffset > 0) kotlin.random.Random.nextInt(maxOffset + 1)
                                 else 0
-                        val randomOffsetY =
+                        val offsetY =
                                 if (maxOffset > 0) kotlin.random.Random.nextInt(maxOffset + 1)
                                 else 0
-
-                        val startX = baseStartX + randomOffsetX
-                        val startY = baseStartY + randomOffsetY
-
                         return DetectionArea(
-                                startX = startX.toFloat(),
-                                startY = startY.toFloat(),
+                                startX = (baseStartX + offsetX).toFloat(),
+                                startY = (baseStartY + offsetY).toFloat(),
                                 width = tileSize.toFloat(),
                                 height = tileSize.toFloat()
                         )
@@ -342,50 +270,37 @@ class CameraPreviewAnalyzer(
                 val clampedIndex = if (totalTiles > 0) index % totalTiles else 0
 
                 val isRotated = rotationDegrees == 90 || rotationDegrees == 270
-                val displayCols = if (!isRotated) stepsX else stepsY
-                val displayRows = if (!isRotated) stepsY else stepsX
+                val displayCols = if (isRotated) stepsY else stepsX
+                val displayRows = if (isRotated) stepsX else stepsY
 
-                val (sensorColIndex, sensorRowIndex) =
+                val (col, row) =
                         when (strategy) {
                                 ScanStrategy.ROWS -> {
                                         var displayCol = clampedIndex % displayCols
                                         val displayRow = clampedIndex / displayCols
-                                        if (isRotated) {
-                                                displayCol = displayCols - 1 - displayCol
-                                        }
-                                        if (!isRotated) {
-                                                displayCol to displayRow
-                                        } else {
-                                                displayRow to displayCol
-                                        }
+                                        if (isRotated) displayCol = displayCols - 1 - displayCol
+                                        if (isRotated) displayRow to displayCol
+                                        else displayCol to displayRow
                                 }
                                 ScanStrategy.COLUMNS -> {
                                         val displayRow = clampedIndex % displayRows
                                         var displayCol = clampedIndex / displayRows
-                                        if (isRotated) {
-                                                displayCol = displayCols - 1 - displayCol
-                                        }
-                                        if (!isRotated) {
-                                                displayCol to displayRow
-                                        } else {
-                                                displayRow to displayCol
-                                        }
+                                        if (isRotated) displayCol = displayCols - 1 - displayCol
+                                        if (isRotated) displayRow to displayCol
+                                        else displayCol to displayRow
                                 }
-                                ScanStrategy.SCALED_SINGLE -> 0 to 0
-                                ScanStrategy.RANDOM ->
-                                        0 to 0 // unreachable but keeps `when` exhaustive
+                                else -> 0 to 0
                         }
 
-                val x =
-                        baseStartX +
-                                min((sensorColIndex * strideX).roundToInt(), baseSide - tileSize)
-                val y =
-                        baseStartY +
-                                min((sensorRowIndex * strideY).roundToInt(), baseSide - tileSize)
+                val strideX = if (stepsX > 1) (baseSide - tileSize).toFloat() / (stepsX - 1) else 0f
+                val strideY = if (stepsY > 1) (baseSide - tileSize).toFloat() / (stepsY - 1) else 0f
 
-                return link.sciber.foofinder.domain.DetectionArea(
-                        startX = x.toFloat(),
-                        startY = y.toFloat(),
+                val startX = baseStartX + min((col * strideX).toInt(), baseSide - tileSize)
+                val startY = baseStartY + min((row * strideY).toInt(), baseSide - tileSize)
+
+                return DetectionArea(
+                        startX = startX.toFloat(),
+                        startY = startY.toFloat(),
                         width = tileSize.toFloat(),
                         height = tileSize.toFloat()
                 )

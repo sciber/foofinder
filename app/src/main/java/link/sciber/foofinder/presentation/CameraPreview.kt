@@ -13,8 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,17 +26,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import java.util.concurrent.Executors
+import kotlin.math.max
+import kotlin.math.min
 import link.sciber.foofinder.data.detection.Accelerator
 import link.sciber.foofinder.data.detection.FooDetector
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
-import java.util.concurrent.Executors
-import kotlin.math.max
-import kotlin.math.min
 
 @Composable
 fun CameraPreview(
@@ -50,6 +47,8 @@ fun CameraPreview(
         currentConfidenceThreshold: Float,
         currentMaxBoxes: Int,
         currentNmsEnabled: Boolean,
+        currentScanStrategy: CameraPreviewAnalyzer.ScanStrategy =
+                CameraPreviewAnalyzer.ScanStrategy.RANDOM,
         modifier: Modifier = Modifier
 ) {
         val lifecycleOwner = LocalLifecycleOwner.current
@@ -57,6 +56,7 @@ fun CameraPreview(
 
         var previewView by remember { mutableStateOf<PreviewView?>(null) }
         var detector by remember { mutableStateOf<FooDetector?>(null) }
+        var analyzer by remember { mutableStateOf<CameraPreviewAnalyzer?>(null) }
 
         // Initialize detector
         LaunchedEffect(Unit) {
@@ -106,28 +106,45 @@ fun CameraPreview(
 
                                                         val previewBuilder =
                                                                 Preview.Builder()
-                                                                        .setTargetResolution(resolution)
-                                                                        .setTargetRotation(Surface.ROTATION_0)
+                                                                        .setTargetResolution(
+                                                                                resolution
+                                                                        )
+                                                                        .setTargetRotation(
+                                                                                Surface.ROTATION_0
+                                                                        )
 
                                                         val previewUseCase = previewBuilder.build()
 
                                                         val imageAnalysisBuilder =
                                                                 ImageAnalysis.Builder()
-                                                                        .setTargetResolution(resolution)
-                                                                        .setTargetRotation(Surface.ROTATION_0)
-                                                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                                                        .setTargetResolution(
+                                                                                resolution
+                                                                        )
+                                                                        .setTargetRotation(
+                                                                                Surface.ROTATION_0
+                                                                        )
+                                                                        .setBackpressureStrategy(
+                                                                                ImageAnalysis
+                                                                                        .STRATEGY_KEEP_ONLY_LATEST
+                                                                        )
 
                                                         val imageAnalysisUseCase =
                                                                 imageAnalysisBuilder.build()
 
-                                                        val analyzer =
+                                                        val createdAnalyzer =
                                                                 CameraPreviewAnalyzer(
-                                                                        det,
-                                                                        onDetectionResult
-                                                                )
+                                                                                det,
+                                                                                onDetectionResult
+                                                                        )
+                                                                        .also {
+                                                                                it.setScanStrategy(
+                                                                                        currentScanStrategy
+                                                                                )
+                                                                        }
+                                                        analyzer = createdAnalyzer
                                                         imageAnalysisUseCase.setAnalyzer(
                                                                 Executors.newSingleThreadExecutor(),
-                                                                analyzer
+                                                                createdAnalyzer
                                                         )
 
                                                         previewUseCase.setSurfaceProvider(
@@ -157,6 +174,8 @@ fun CameraPreview(
                 currentResolution?.let { resolution -> applyResolution(resolution) }
         }
 
+        LaunchedEffect(currentScanStrategy) { analyzer?.setScanStrategy(currentScanStrategy) }
+
         Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
                 currentResolution?.let { resolution ->
                         val baseSidePx = min(resolution.width, resolution.height)
@@ -174,7 +193,10 @@ fun CameraPreview(
                                                 AndroidView(
                                                         factory = { ctx ->
                                                                 PreviewView(ctx).apply {
-                                                                        scaleType = PreviewView.ScaleType.FILL_START
+                                                                        scaleType =
+                                                                                PreviewView
+                                                                                        .ScaleType
+                                                                                        .FILL_START
                                                                         previewView = this
                                                                         Log.d(
                                                                                 "CameraPreview",
@@ -187,43 +209,111 @@ fun CameraPreview(
                                         }
 
                                         currentDetection?.let { detection ->
-                                                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                                Box(modifier = Modifier.fillMaxSize()) {
                                                         val baseWidth = baseSidePx.toFloat()
                                                         val baseHeight = baseSidePx.toFloat()
-                                                        val maxBoxes = currentMaxBoxes.coerceAtLeast(0)
+                                                        val maxBoxes =
+                                                                currentMaxBoxes.coerceAtLeast(0)
 
-                                                        val displayBoxes = detection.boundingBoxes.take(maxBoxes)
+                                                        val displayBoxes =
+                                                                detection.boundingBoxes.take(
+                                                                        maxBoxes
+                                                                )
 
                                                         val adjustedBoxes =
                                                                 displayBoxes.map { box ->
-                                                                        val left = box.startX.coerceIn(0f, baseWidth)
-                                                                        val top = box.startY.coerceIn(0f, baseHeight)
-                                                                        val right = (box.startX + box.width).coerceIn(0f, baseWidth)
-                                                                        val bottom = (box.startY + box.height).coerceIn(0f, baseHeight)
+                                                                        val left =
+                                                                                box.startX.coerceIn(
+                                                                                        0f,
+                                                                                        baseWidth
+                                                                                )
+                                                                        val top =
+                                                                                box.startY.coerceIn(
+                                                                                        0f,
+                                                                                        baseHeight
+                                                                                )
+                                                                        val right =
+                                                                                (box.startX +
+                                                                                                box.width)
+                                                                                        .coerceIn(
+                                                                                                0f,
+                                                                                                baseWidth
+                                                                                        )
+                                                                        val bottom =
+                                                                                (box.startY +
+                                                                                                box.height)
+                                                                                        .coerceIn(
+                                                                                                0f,
+                                                                                                baseHeight
+                                                                                        )
                                                                         box.copy(
                                                                                 startX = left,
                                                                                 startY = top,
-                                                                                width = max(0f, right - left),
-                                                                                height = max(0f, bottom - top)
+                                                                                width =
+                                                                                        max(
+                                                                                                0f,
+                                                                                                right -
+                                                                                                        left
+                                                                                        ),
+                                                                                height =
+                                                                                        max(
+                                                                                                0f,
+                                                                                                bottom -
+                                                                                                        top
+                                                                                        )
                                                                         )
                                                                 }
 
-                                                        val adjustedArea = detection.area.let { area ->
-                                                                val left = area.startX.coerceIn(0f, baseWidth)
-                                                                val top = area.startY.coerceIn(0f, baseHeight)
-                                                                val right = (area.startX + area.width).coerceIn(0f, baseWidth)
-                                                                val bottom = (area.startY + area.height).coerceIn(0f, baseHeight)
-                                                                DetectionArea(
-                                                                        startX = left,
-                                                                        startY = top,
-                                                                        width = max(0f, right - left),
-                                                                        height = max(0f, bottom - top)
-                                                                )
-                                                        }
+                                                        val adjustedArea =
+                                                                detection.area.let { area ->
+                                                                        val left =
+                                                                                area.startX
+                                                                                        .coerceIn(
+                                                                                                0f,
+                                                                                                baseWidth
+                                                                                        )
+                                                                        val top =
+                                                                                area.startY
+                                                                                        .coerceIn(
+                                                                                                0f,
+                                                                                                baseHeight
+                                                                                        )
+                                                                        val right =
+                                                                                (area.startX +
+                                                                                                area.width)
+                                                                                        .coerceIn(
+                                                                                                0f,
+                                                                                                baseWidth
+                                                                                        )
+                                                                        val bottom =
+                                                                                (area.startY +
+                                                                                                area.height)
+                                                                                        .coerceIn(
+                                                                                                0f,
+                                                                                                baseHeight
+                                                                                        )
+                                                                        DetectionArea(
+                                                                                startX = left,
+                                                                                startY = top,
+                                                                                width =
+                                                                                        max(
+                                                                                                0f,
+                                                                                                right -
+                                                                                                        left
+                                                                                        ),
+                                                                                height =
+                                                                                        max(
+                                                                                                0f,
+                                                                                                bottom -
+                                                                                                        top
+                                                                                        )
+                                                                        )
+                                                                }
 
                                                         val adjustedDetection =
                                                                 detection.copy(
-                                                                        boundingBoxes = adjustedBoxes,
+                                                                        boundingBoxes =
+                                                                                adjustedBoxes,
                                                                         area = adjustedArea
                                                                 )
 
@@ -234,62 +324,8 @@ fun CameraPreview(
                                                                 modifier = Modifier.fillMaxSize()
                                                         )
 
-                                                        val fracBelowY =
-                                                                ((adjustedArea.startY + adjustedArea.height) /
-                                                                                baseHeight)
-                                                                        .coerceIn(0f, 1f)
-                                                        val offsetY = (maxHeight * fracBelowY) + 8.dp
-
-                                                        androidx.compose.material3.Card(
-                                                                modifier =
-                                                                        Modifier.align(Alignment.TopEnd)
-                                                                                .padding(end = 8.dp)
-                                                                                .offset(y = offsetY),
-                                                                colors =
-                                                                        androidx.compose.material3
-                                                                                .CardDefaults.cardColors(
-                                                                                        containerColor =
-                                                                                                Color.Black.copy(
-                                                                                                        alpha = 0.7f
-                                                                                                )
-                                                                                )
-                                                        ) {
-                                                                val filteredOut =
-                                                                        (detection.rawDetections -
-                                                                                        detection.afterNmsDetections)
-                                                                                .coerceAtLeast(0)
-                                                                val fpsText =
-                                                                        if (detection.fps >= 0f)
-                                                                                String.format(
-                                                                                        "%.1f",
-                                                                                        detection.fps
-                                                                                )
-                                                                        else "-"
-                                                                val infText =
-                                                                        if (detection.inferenceMs >= 0)
-                                                                                "${detection.inferenceMs} ms"
-                                                                        else "-"
-                                                                val delegateText =
-                                                                        detector?.activeDelegateLabel() ?: "-"
-                                                                val content =
-                                                                        """
-                            FPS: $fpsText
-                            Inference: $infText
-                            Objects: ${detection.afterNmsDetections} (kept)
-                            NMS filtered/raw: $filteredOut/${detection.rawDetections}
-                            Delegate: $delegateText
-                        """.trimIndent()
-
-                                                                androidx.compose.material3.Text(
-                                                                        text = content,
-                                                                        color = Color.White,
-                                                                        style =
-                                                                                androidx.compose.material3
-                                                                                        .MaterialTheme.typography
-                                                                                        .bodyMedium,
-                                                                        modifier = Modifier.padding(8.dp)
-                                                                )
-                                                        }
+                                                        // Overlay-only stats card removed; InfoBar
+                                                        // handles display below the preview.
                                                 }
                                         }
                                 }
