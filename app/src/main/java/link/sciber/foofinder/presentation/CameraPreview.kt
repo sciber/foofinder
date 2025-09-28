@@ -12,10 +12,10 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,16 +25,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.util.concurrent.Executors
 import link.sciber.foofinder.data.detection.Accelerator
 import link.sciber.foofinder.data.detection.FooDetector
 import link.sciber.foofinder.domain.Detection
+import link.sciber.foofinder.domain.DetectionArea
+import java.util.concurrent.Executors
+import kotlin.math.max
+import kotlin.math.min
 
 @Composable
 fun CameraPreview(
@@ -57,7 +61,6 @@ fun CameraPreview(
         // Initialize detector
         LaunchedEffect(Unit) {
                 try {
-                        // Use the actual model file in assets
                         detector =
                                 FooDetector(
                                         context,
@@ -65,7 +68,6 @@ fun CameraPreview(
                                         accelerator = Accelerator.GPU,
                                         numThreads = 4
                                 )
-                        // Apply initial configs
                         detector?.setConfidenceThreshold(currentConfidenceThreshold)
                         detector?.setNmsEnabled(currentNmsEnabled)
                         Log.d("CameraPreview", "FooDetector initialized successfully")
@@ -74,19 +76,16 @@ fun CameraPreview(
                 }
         }
 
-        // Re-apply threshold when it changes
         LaunchedEffect(currentConfidenceThreshold) {
                 detector?.setConfidenceThreshold(currentConfidenceThreshold)
                 Log.d("CameraPreview", "Applied confidence threshold: $currentConfidenceThreshold")
         }
 
-        // Re-apply NMS toggle when it changes
         LaunchedEffect(currentNmsEnabled) {
                 detector?.setNmsEnabled(currentNmsEnabled)
                 Log.d("CameraPreview", "Applied NMS enabled: $currentNmsEnabled")
         }
 
-        // Function to apply resolution using ProcessCameraProvider
         fun applyResolution(resolution: Size) {
                 previewView?.let { preview ->
                         detector?.let { det ->
@@ -103,41 +102,24 @@ fun CameraPreview(
                                                         val cameraProvider =
                                                                 cameraProviderFuture.get()
 
-                                                        // Unbind all use cases first
                                                         cameraProvider.unbindAll()
 
-                                                        // Create preview use case with target
-                                                        // resolution
                                                         val previewBuilder =
                                                                 Preview.Builder()
-                                                                        .setTargetResolution(
-                                                                                resolution
-                                                                        )
-                                                                        .setTargetRotation(
-                                                                                Surface.ROTATION_0
-                                                                        ) // Portrait orientation
+                                                                        .setTargetResolution(resolution)
+                                                                        .setTargetRotation(Surface.ROTATION_0)
 
                                                         val previewUseCase = previewBuilder.build()
 
-                                                        // Create image analysis use case with same
-                                                        // target resolution
                                                         val imageAnalysisBuilder =
                                                                 ImageAnalysis.Builder()
-                                                                        .setTargetResolution(
-                                                                                resolution
-                                                                        )
-                                                                        .setTargetRotation(
-                                                                                Surface.ROTATION_0
-                                                                        )
-                                                                        .setBackpressureStrategy(
-                                                                                ImageAnalysis
-                                                                                        .STRATEGY_KEEP_ONLY_LATEST
-                                                                        )
+                                                                        .setTargetResolution(resolution)
+                                                                        .setTargetRotation(Surface.ROTATION_0)
+                                                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
 
                                                         val imageAnalysisUseCase =
                                                                 imageAnalysisBuilder.build()
 
-                                                        // Set up the analyzer with detector
                                                         val analyzer =
                                                                 CameraPreviewAnalyzer(
                                                                         det,
@@ -148,29 +130,16 @@ fun CameraPreview(
                                                                 analyzer
                                                         )
 
-                                                        // Set surface provider for preview
                                                         previewUseCase.setSurfaceProvider(
                                                                 preview.surfaceProvider
                                                         )
 
-                                                        // Bind both use cases to lifecycle with
-                                                        // back camera
-                                                        val camera =
-                                                                cameraProvider.bindToLifecycle(
-                                                                        lifecycleOwner,
-                                                                        CameraSelector
-                                                                                .DEFAULT_BACK_CAMERA,
-                                                                        previewUseCase,
-                                                                        imageAnalysisUseCase
-                                                                )
-
-                                                        // Log actual resolution info
-                                                        camera.cameraInfo.let { info ->
-                                                                Log.d(
-                                                                        "CameraPreview",
-                                                                        "Camera bound successfully with preview and analysis"
-                                                                )
-                                                        }
+                                                        cameraProvider.bindToLifecycle(
+                                                                lifecycleOwner,
+                                                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                                                previewUseCase,
+                                                                imageAnalysisUseCase
+                                                        )
 
                                                         onResolutionChange(resolution)
                                                 },
@@ -184,95 +153,126 @@ fun CameraPreview(
                 }
         }
 
-        // Apply resolution when it changes from parent
         LaunchedEffect(currentResolution) {
                 currentResolution?.let { resolution -> applyResolution(resolution) }
         }
 
-        // Camera Preview with proper aspect ratio handling and detection overlay
         Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
                 currentResolution?.let { resolution ->
-                        val aspectRatio = resolution.width.toFloat() / resolution.height.toFloat()
+                        val baseSidePx = min(resolution.width, resolution.height)
 
-                        // Force recomposition when resolution changes
-                        key(resolution) {
-                                AndroidView(
-                                        factory = { ctx ->
-                                                PreviewView(ctx).apply {
-                                                        // Use FIT_CENTER to preserve aspect ratio
-                                                        scaleType = PreviewView.ScaleType.FIT_CENTER
-                                                        previewView = this
-                                                        Log.d(
-                                                                "CameraPreview",
-                                                                "PreviewView created with aspect ratio: $aspectRatio for resolution: ${resolution.width}x${resolution.height}"
-                                                        )
-                                                }
-                                        },
-                                        modifier = Modifier.fillMaxSize().aspectRatio(aspectRatio)
-                                )
-                        }
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                val squareSize = minOf(maxWidth, maxHeight)
 
-                        // Detection Overlay + Stats (positioned relative to overlay size)
-                        currentDetection?.let { detection ->
-                                BoxWithConstraints(
-                                        modifier = Modifier.fillMaxSize().aspectRatio(aspectRatio)
+                                Box(
+                                        modifier =
+                                                Modifier.size(squareSize)
+                                                        .clipToBounds()
+                                                        .align(Alignment.Center)
                                 ) {
-                                        // Draw boxes overlay (limit to currentMaxBoxes)
-                                        val displayBoxes =
-                                                detection.boundingBoxes.take(
-                                                        currentMaxBoxes.coerceAtLeast(0)
+                                        key(resolution) {
+                                                AndroidView(
+                                                        factory = { ctx ->
+                                                                PreviewView(ctx).apply {
+                                                                        scaleType = PreviewView.ScaleType.FILL_START
+                                                                        previewView = this
+                                                                        Log.d(
+                                                                                "CameraPreview",
+                                                                                "PreviewView created cropped to base area ${baseSidePx}px for resolution: ${resolution.width}x${resolution.height}"
+                                                                        )
+                                                                }
+                                                        },
+                                                        modifier = Modifier.fillMaxSize()
                                                 )
-                                        val displayDetection =
-                                                detection.copy(boundingBoxes = displayBoxes)
-                                        DetectionOverlay(
-                                                detection = displayDetection,
-                                                sourceWidth = resolution.width,
-                                                sourceHeight = resolution.height,
-                                                modifier = Modifier.fillMaxSize()
-                                        )
+                                        }
 
-                                        // Compute vertical offset for the stats card (just below
-                                        // detection area)
-                                        val area = detection.area
-                                        val fracBelowY =
-                                                ((area.startY + area.height) /
-                                                                resolution.height.toFloat())
-                                                        .coerceIn(0f, 1f)
-                                        val offsetY = (maxHeight * fracBelowY) + 8.dp
+                                        currentDetection?.let { detection ->
+                                                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                                        val baseWidth = baseSidePx.toFloat()
+                                                        val baseHeight = baseSidePx.toFloat()
+                                                        val maxBoxes = currentMaxBoxes.coerceAtLeast(0)
 
-                                        // Render compact stats card (wrap content) offset from
-                                        // top-left of overlay
-                                        androidx.compose.material3.Card(
-                                                modifier =
-                                                        Modifier.align(Alignment.TopEnd)
-                                                                .padding(end = 8.dp)
-                                                                .offset(y = offsetY),
-                                                colors =
-                                                        androidx.compose.material3.CardDefaults
-                                                                .cardColors(
-                                                                        containerColor =
-                                                                                Color.Black.copy(
-                                                                                        alpha = 0.7f
-                                                                                )
+                                                        val displayBoxes = detection.boundingBoxes.take(maxBoxes)
+
+                                                        val adjustedBoxes =
+                                                                displayBoxes.map { box ->
+                                                                        val left = box.startX.coerceIn(0f, baseWidth)
+                                                                        val top = box.startY.coerceIn(0f, baseHeight)
+                                                                        val right = (box.startX + box.width).coerceIn(0f, baseWidth)
+                                                                        val bottom = (box.startY + box.height).coerceIn(0f, baseHeight)
+                                                                        box.copy(
+                                                                                startX = left,
+                                                                                startY = top,
+                                                                                width = max(0f, right - left),
+                                                                                height = max(0f, bottom - top)
+                                                                        )
+                                                                }
+
+                                                        val adjustedArea = detection.area.let { area ->
+                                                                val left = area.startX.coerceIn(0f, baseWidth)
+                                                                val top = area.startY.coerceIn(0f, baseHeight)
+                                                                val right = (area.startX + area.width).coerceIn(0f, baseWidth)
+                                                                val bottom = (area.startY + area.height).coerceIn(0f, baseHeight)
+                                                                DetectionArea(
+                                                                        startX = left,
+                                                                        startY = top,
+                                                                        width = max(0f, right - left),
+                                                                        height = max(0f, bottom - top)
                                                                 )
-                                        ) {
-                                                val filteredOut =
-                                                        (detection.rawDetections -
-                                                                        detection
-                                                                                .afterNmsDetections)
-                                                                .coerceAtLeast(0)
-                                                val fpsText =
-                                                        if (detection.fps >= 0f)
-                                                                String.format("%.1f", detection.fps)
-                                                        else "-"
-                                                val infText =
-                                                        if (detection.inferenceMs >= 0)
-                                                                "${detection.inferenceMs} ms"
-                                                        else "-"
-                                                val delegateText =
-                                                        detector?.activeDelegateLabel() ?: "-"
-                                                val content =
-                                                        """
+                                                        }
+
+                                                        val adjustedDetection =
+                                                                detection.copy(
+                                                                        boundingBoxes = adjustedBoxes,
+                                                                        area = adjustedArea
+                                                                )
+
+                                                        DetectionOverlay(
+                                                                detection = adjustedDetection,
+                                                                sourceWidth = baseSidePx,
+                                                                sourceHeight = baseSidePx,
+                                                                modifier = Modifier.fillMaxSize()
+                                                        )
+
+                                                        val fracBelowY =
+                                                                ((adjustedArea.startY + adjustedArea.height) /
+                                                                                baseHeight)
+                                                                        .coerceIn(0f, 1f)
+                                                        val offsetY = (maxHeight * fracBelowY) + 8.dp
+
+                                                        androidx.compose.material3.Card(
+                                                                modifier =
+                                                                        Modifier.align(Alignment.TopEnd)
+                                                                                .padding(end = 8.dp)
+                                                                                .offset(y = offsetY),
+                                                                colors =
+                                                                        androidx.compose.material3
+                                                                                .CardDefaults.cardColors(
+                                                                                        containerColor =
+                                                                                                Color.Black.copy(
+                                                                                                        alpha = 0.7f
+                                                                                                )
+                                                                                )
+                                                        ) {
+                                                                val filteredOut =
+                                                                        (detection.rawDetections -
+                                                                                        detection.afterNmsDetections)
+                                                                                .coerceAtLeast(0)
+                                                                val fpsText =
+                                                                        if (detection.fps >= 0f)
+                                                                                String.format(
+                                                                                        "%.1f",
+                                                                                        detection.fps
+                                                                                )
+                                                                        else "-"
+                                                                val infText =
+                                                                        if (detection.inferenceMs >= 0)
+                                                                                "${detection.inferenceMs} ms"
+                                                                        else "-"
+                                                                val delegateText =
+                                                                        detector?.activeDelegateLabel() ?: "-"
+                                                                val content =
+                                                                        """
                             FPS: $fpsText
                             Inference: $infText
                             Objects: ${detection.afterNmsDetections} (kept)
@@ -280,21 +280,22 @@ fun CameraPreview(
                             Delegate: $delegateText
                         """.trimIndent()
 
-                                                androidx.compose.material3.Text(
-                                                        text = content,
-                                                        color = Color.White,
-                                                        style =
-                                                                androidx.compose.material3
-                                                                        .MaterialTheme.typography
-                                                                        .bodyMedium,
-                                                        modifier = Modifier.padding(8.dp)
-                                                )
+                                                                androidx.compose.material3.Text(
+                                                                        text = content,
+                                                                        color = Color.White,
+                                                                        style =
+                                                                                androidx.compose.material3
+                                                                                        .MaterialTheme.typography
+                                                                                        .bodyMedium,
+                                                                        modifier = Modifier.padding(8.dp)
+                                                                )
+                                                        }
+                                                }
                                         }
                                 }
                         }
                 }
                         ?: run {
-                                // Fallback when no resolution is set
                                 AndroidView(
                                         factory = { ctx ->
                                                 PreviewView(ctx).apply {
