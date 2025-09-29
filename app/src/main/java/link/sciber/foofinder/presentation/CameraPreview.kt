@@ -3,6 +3,7 @@ package link.sciber.foofinder.presentation
 import android.util.Log
 import android.util.Size
 import android.view.Surface
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -49,7 +51,8 @@ fun CameraPreview(
         currentNmsEnabled: Boolean,
         currentScanStrategy: CameraPreviewAnalyzer.ScanStrategy =
                 CameraPreviewAnalyzer.ScanStrategy.RANDOM,
-        modifier: Modifier = Modifier
+        modifier: Modifier = Modifier,
+        onCameraReady: (Camera?) -> Unit = {}
 ) {
         val lifecycleOwner = LocalLifecycleOwner.current
         val context = LocalContext.current
@@ -103,6 +106,7 @@ fun CameraPreview(
                                                                 cameraProviderFuture.get()
 
                                                         cameraProvider.unbindAll()
+                                                        onCameraReady(null)
 
                                                         val previewBuilder =
                                                                 Preview.Builder()
@@ -150,21 +154,21 @@ fun CameraPreview(
                                                         previewUseCase.setSurfaceProvider(
                                                                 preview.surfaceProvider
                                                         )
-
-                                                        cameraProvider.bindToLifecycle(
-                                                                lifecycleOwner,
-                                                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                                                previewUseCase,
-                                                                imageAnalysisUseCase
-                                                        )
+                                                        val camera =
+                                                                cameraProvider.bindToLifecycle(
+                                                                        lifecycleOwner,
+                                                                        CameraSelector.DEFAULT_BACK_CAMERA,
+                                                                        previewUseCase,
+                                                                        imageAnalysisUseCase
+                                                                )
 
                                                         onResolutionChange(resolution)
+                                                        onCameraReady(camera)
                                                 },
                                                 ContextCompat.getMainExecutor(context)
                                         )
                                 } catch (e: Exception) {
                                         Log.e("CameraPreview", "Error applying resolution", e)
-                                        e.printStackTrace()
                                 }
                         }
                 }
@@ -175,6 +179,10 @@ fun CameraPreview(
         }
 
         LaunchedEffect(currentScanStrategy) { analyzer?.setScanStrategy(currentScanStrategy) }
+
+        DisposableEffect(Unit) {
+                onDispose { onCameraReady(null) }
+        }
 
         Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
                 currentResolution?.let { resolution ->

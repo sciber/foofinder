@@ -37,6 +37,7 @@ import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,9 +51,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
 import link.sciber.foofinder.R
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.utils.CameraResolutionUtils
+import androidx.camera.core.Camera
+import androidx.camera.core.TorchState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +67,9 @@ fun CameraScreen() {
 
         var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
         var currentResolution by remember { mutableStateOf<Size?>(null) }
+        var currentCamera by remember { mutableStateOf<Camera?>(null) }
+        var isTorchAvailable by remember { mutableStateOf(false) }
+        var isTorchEnabled by remember { mutableStateOf(false) }
 
         // Detection controls state
         var currentConfidenceThreshold by remember { mutableStateOf(0.45f) }
@@ -85,6 +93,40 @@ fun CameraScreen() {
         }
 
         val navInsets = WindowInsets.navigationBars.asPaddingValues()
+        val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
+
+        LaunchedEffect(currentCamera) {
+                val hasFlash = currentCamera?.cameraInfo?.hasFlashUnit() == true
+                isTorchAvailable = hasFlash
+                if (!hasFlash) {
+                        isTorchEnabled = false
+                }
+        }
+
+        DisposableEffect(currentCamera) {
+                val cam = currentCamera
+                if (cam == null) {
+                        onDispose { }
+                } else {
+                        val torchObserver = Observer<Int> { state ->
+                                isTorchEnabled = state == TorchState.ON
+                        }
+                        cam.cameraInfo.torchState.observeForever(torchObserver)
+                        onDispose {
+                                cam.cameraInfo.torchState.removeObserver(torchObserver)
+                        }
+                }
+        }
+
+        val toggleTorch = {
+                val cam = currentCamera
+                if (cam != null && isTorchAvailable) {
+                        val desiredState = !isTorchEnabled
+                        cam.cameraControl
+                                .enableTorch(desiredState)
+                                .addListener(Runnable { }, mainExecutor)
+                }
+        }
 
         val sheetScrollState = rememberScrollState()
         val sheetState = rememberBottomSheetScaffoldState()
@@ -201,7 +243,11 @@ fun CameraScreen() {
                                 .fillMaxSize()
                                 .padding(paddingValues)
                 ) {
-                        TopBar()
+                        TopBar(
+                                isTorchEnabled = isTorchEnabled,
+                                isTorchAvailable = isTorchAvailable,
+                                onToggleTorch = toggleTorch
+                        )
 
                         Box(
                                 modifier = Modifier
@@ -220,7 +266,8 @@ fun CameraScreen() {
                                         currentMaxBoxes = currentMaxBoxes,
                                         currentNmsEnabled = currentNmsEnabled,
                                         currentScanStrategy = currentScanStrategy,
-                                        modifier = Modifier.fillMaxSize()
+                                        modifier = Modifier.fillMaxSize(),
+                                        onCameraReady = { camera -> currentCamera = camera }
                                 )
                         }
 
@@ -232,11 +279,19 @@ fun CameraScreen() {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun TopBar() {
+private fun TopBar(
+        isTorchEnabled: Boolean,
+        isTorchAvailable: Boolean,
+        onToggleTorch: () -> Unit
+) {
         TopAppBar(
                 title = { Text("FooFinder", fontWeight = FontWeight.SemiBold) },
                 actions = {
-                        IconButton(onClick = { /* TODO: torch */ }) { Icon(painter = painterResource(id = R.drawable.flashlight_on_24), contentDescription = "Flashlight On") }
+                        val iconRes = if (isTorchEnabled) R.drawable.flashlight_on_24 else R.drawable.flashlight_off_24
+                        val contentDescription = if (isTorchEnabled) "Flashlight On" else "Flashlight Off"
+                        IconButton(onClick = onToggleTorch, enabled = isTorchAvailable) {
+                                Icon(painter = painterResource(id = iconRes), contentDescription = contentDescription)
+                        }
                         IconButton(onClick = { /* TODO: grid */ }) { Icon(painter = painterResource(id = R.drawable.dataset_24), contentDescription = "Dataset") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
