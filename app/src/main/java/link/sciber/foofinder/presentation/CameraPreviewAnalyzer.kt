@@ -27,6 +27,7 @@ class CameraPreviewAnalyzer(
         /** Scanning strategies for object detection. */
         enum class ScanStrategy {
                 SCALED_SINGLE,
+                SINGLE_CENTER,
                 ROWS,
                 COLUMNS,
                 RANDOM
@@ -91,6 +92,25 @@ class CameraPreviewAnalyzer(
                                         when (strategy) {
                                                 ScanStrategy.SCALED_SINGLE ->
                                                         detector.detect(bitmap)
+                                                ScanStrategy.SINGLE_CENTER -> {
+                                                        val tileSize =
+                                                                detector.getModelInputSize()
+                                                                        .coerceAtMost(baseSide)
+                                                        val area =
+                                                                computeTileArea(
+                                                                        baseStartX = 0,
+                                                                        baseStartY = 0,
+                                                                        baseSide = baseSide,
+                                                                        tileSize = tileSize,
+                                                                        index = 0,
+                                                                        strategy =
+                                                                                ScanStrategy.SINGLE_CENTER,
+                                                                        rotationDegrees =
+                                                                                rotationDegrees
+                                                                )
+
+                                                        detector.detectInArea(bitmap, area)
+                                                }
                                                 ScanStrategy.ROWS, ScanStrategy.COLUMNS -> {
                                                         val tileSize =
                                                                 detector.getModelInputSize()
@@ -261,6 +281,16 @@ class CameraPreviewAnalyzer(
                         return DetectionArea(
                                 startX = (baseStartX + offsetX).toFloat(),
                                 startY = (baseStartY + offsetY).toFloat(),
+                                width = tileSize.toFloat(),
+                                height = tileSize.toFloat()
+                        )
+                }
+
+                if (strategy == ScanStrategy.SINGLE_CENTER) {
+                        val offset = ((baseSide - tileSize) / 2f).coerceAtLeast(0f)
+                        return DetectionArea(
+                                startX = baseStartX + offset,
+                                startY = baseStartY + offset,
                                 width = tileSize.toFloat(),
                                 height = tileSize.toFloat()
                         )
