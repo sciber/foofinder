@@ -53,6 +53,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlin.math.roundToInt
 import link.sciber.foofinder.R
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.utils.CameraResolutionUtils
@@ -66,19 +69,26 @@ fun CameraScreen() {
         val controller = remember { LifecycleCameraController(context) }
 
         var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
-        var currentResolution by remember { mutableStateOf<Size?>(null) }
         var currentCamera by remember { mutableStateOf<Camera?>(null) }
         var isTorchAvailable by remember { mutableStateOf(false) }
         var isTorchEnabled by remember { mutableStateOf(false) }
 
-        // Detection controls state
-        var currentConfidenceThreshold by remember { mutableStateOf(0.45f) }
-        var currentNmsEnabled by remember { mutableStateOf(true) }
-        var currentMaxBoxes by remember { mutableStateOf(15) }
-        var currentScanStrategy by remember {
-                mutableStateOf(CameraPreviewAnalyzer.ScanStrategy.RANDOM)
+        val settingsViewModel: CameraSettingsViewModel = viewModel()
+        val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
+
+        val currentResolution = settingsState.resolution
+        val currentModelId = settingsState.modelId
+        val currentScanStrategy = settingsState.scanStrategy
+
+        val modelOptions = remember {
+                listOf(
+                        "models/best_plain_float16.tflite" to "DeePoo YOLOX Nano"
+                )
         }
 
+        val currentConfidenceThreshold = settingsState.confidenceThreshold
+        val currentNmsEnabled = settingsState.nmsEnabled
+        val currentMaxBoxes = settingsState.maxBoxes
         // Detection results
         var currentDetection by remember { mutableStateOf<Detection?>(null) }
 
@@ -86,9 +96,22 @@ fun CameraScreen() {
         LaunchedEffect(Unit) {
                 val resolutions = CameraResolutionUtils.getAvailableResolutions(context)
                 availableResolutions = CameraResolutionUtils.sortResolutionsByWidth(resolutions)
-                if (currentResolution == null && resolutions.isNotEmpty()) {
-                        currentResolution =
-                                CameraResolutionUtils.findBestDefaultResolution(resolutions)
+        }
+
+        LaunchedEffect(availableResolutions, currentResolution) {
+                if (availableResolutions.isEmpty()) return@LaunchedEffect
+
+                val persisted = currentResolution
+                val targetResolution =
+                        persisted?.let { saved ->
+                                availableResolutions.find { it == saved }
+                        }
+                                ?: CameraResolutionUtils.findBestDefaultResolution(
+                                        availableResolutions
+                                )
+
+                if (targetResolution != null && targetResolution != persisted) {
+                        settingsViewModel.onResolutionChanged(targetResolution)
                 }
         }
 
@@ -167,23 +190,38 @@ fun CameraScreen() {
                                                 LabeledSlider(
                                                         title = "Confidence Threshold",
                                                         value = currentConfidenceThreshold,
-                                                        onValueChange = { currentConfidenceThreshold = it },
+                                                        onValueChange = { value ->
+                                                                settingsViewModel.onConfidenceThresholdChanged(value)
+                                                        },
                                                         valueFormatter = { v -> (v * 100).toInt().toString() },
                                                         range = 0f..1f
                                                 )
                                                 LabeledSlider(
                                                         title = "Maximum Boxes",
                                                         value = currentMaxBoxes.toFloat(),
-                                                        onValueChange = { currentMaxBoxes = it.toInt() },
+                                                        onValueChange = { value ->
+                                                                settingsViewModel.onMaxBoxesChanged(value.roundToInt())
+                                                        },
                                                         valueFormatter = { v -> v.toInt().toString() },
                                                         range = 1f..100f
                                                 )
+                                                val strategies = CameraPreviewAnalyzer.ScanStrategy.entries
+                                                val strategyLabels = strategies.map { entry ->
+                                                        entry.name.replace('_', ' ')
+                                                                .lowercase()
+                                                                .replaceFirstChar { it.uppercase() }
+                                                }
+                                                val selectedStrategyIndex = strategies.indexOf(currentScanStrategy)
                                                 LabeledDropdown(
                                                         title = "Scanning Strategy",
-                                                        options = CameraPreviewAnalyzer.ScanStrategy.entries.map { it.name.replace('_', ' ').lowercase().replaceFirstChar { c -> c.uppercase() } },
-                                                        selectedIndex = CameraPreviewAnalyzer.ScanStrategy.entries.indexOf(currentScanStrategy),
+                                                        options = strategyLabels,
+                                                        selectedIndex = selectedStrategyIndex,
                                                         onSelectedIndex = { idx ->
-                                                                currentScanStrategy = CameraPreviewAnalyzer.ScanStrategy.entries[idx]
+                                                                if (idx in strategies.indices) {
+                                                                        settingsViewModel.onScanStrategyChanged(
+                                                                                strategies[idx]
+                                                                        )
+                                                                }
                                                         }
                                                 )
                                                 Row(
@@ -192,7 +230,12 @@ fun CameraScreen() {
                                                         verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                         Text("Enable NMS", style = MaterialTheme.typography.bodyMedium)
-                                                        Switch(checked = currentNmsEnabled, onCheckedChange = { currentNmsEnabled = it })
+                                                        Switch(
+                                                                checked = currentNmsEnabled,
+                                                                onCheckedChange = { enabled ->
+                                                                        settingsViewModel.onNmsEnabledChanged(enabled)
+                                                                }
+                                                        )
                                                 }
                                         }
                                 }
@@ -204,13 +247,24 @@ fun CameraScreen() {
                                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
                                                 val resLabels = availableResolutions.map { r -> CameraResolutionUtils.formatResolution(r) }
-                                                val selectedIdx = currentResolution?.let { sel -> availableResolutions.indexOfFirst { it == sel }.takeIf { it >= 0 } } ?: -1
+                                                val selectedIdx =
+                                                        currentResolution?.let { sel ->
+                                                                availableResolutions.indexOfFirst {
+                                                                        it == sel
+                                                                }
+                                                                        .takeIf { it >= 0 }
+                                                        }
+                                                                ?: -1
                                                 LabeledDropdown(
                                                         title = "Resolution",
                                                         options = resLabels,
                                                         selectedIndex = selectedIdx,
                                                         onSelectedIndex = { idx ->
-                                                                if (idx in availableResolutions.indices) currentResolution = availableResolutions[idx]
+                                                                if (idx in availableResolutions.indices) {
+                                                                        settingsViewModel.onResolutionChanged(
+                                                                                availableResolutions[idx]
+                                                                        )
+                                                                }
                                                         }
                                                 )
                                         }
@@ -222,11 +276,23 @@ fun CameraScreen() {
                                                 modifier = Modifier.padding(12.dp),
                                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
+                                                val selectedModelIndex =
+                                                        modelOptions.indexOfFirst {
+                                                                it.first == currentModelId
+                                                        }
+                                                                .takeIf { it >= 0 }
+                                                                ?: 0
                                                 LabeledDropdown(
                                                         title = "Model",
-                                                        options = listOf("DeePoo YOLOX Nano"),
-                                                        selectedIndex = 0,
-                                                        onSelectedIndex = {}
+                                                        options = modelOptions.map { it.second },
+                                                        selectedIndex = selectedModelIndex,
+                                                        onSelectedIndex = { idx ->
+                                                                if (idx in modelOptions.indices) {
+                                                                        settingsViewModel.onModelChanged(
+                                                                                modelOptions[idx].first
+                                                                        )
+                                                                }
+                                                        }
                                                 )
                                                 Text(
                                                         "Input size: 640 × 640",
@@ -259,13 +325,16 @@ fun CameraScreen() {
                                 CameraPreview(
                                         controller = controller,
                                         currentResolution = currentResolution,
-                                        onResolutionChange = { resolution -> currentResolution = resolution },
+                                        onResolutionChange = { resolution ->
+                                                settingsViewModel.onResolutionChanged(resolution)
+                                        },
                                         currentDetection = currentDetection,
                                         onDetectionResult = { detection -> currentDetection = detection },
                                         currentConfidenceThreshold = currentConfidenceThreshold,
                                         currentMaxBoxes = currentMaxBoxes,
                                         currentNmsEnabled = currentNmsEnabled,
                                         currentScanStrategy = currentScanStrategy,
+                                        modelId = currentModelId,
                                         modifier = Modifier.fillMaxSize(),
                                         onCameraReady = { camera -> currentCamera = camera }
                                 )

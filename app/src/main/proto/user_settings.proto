@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+option java_package = "link.sciber.foofinder.datastore";
+option java_multiple_files = true;
+
+message UserSettings {
+  int32 resolution_width = 1;
+  int32 resolution_height = 2;
+  string model_id = 3;
+  string scan_strategy = 4;
+  optional float confidence_threshold = 5;
+  optional int32 max_boxes = 6;
+  optional bool nms_enabled = 7;
+}

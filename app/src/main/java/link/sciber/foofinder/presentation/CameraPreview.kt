@@ -51,6 +51,7 @@ fun CameraPreview(
         currentNmsEnabled: Boolean,
         currentScanStrategy: CameraPreviewAnalyzer.ScanStrategy =
                 CameraPreviewAnalyzer.ScanStrategy.RANDOM,
+        modelId: String = "models/best_plain_float16.tflite",
         modifier: Modifier = Modifier,
         onCameraReady: (Camera?) -> Unit = {}
 ) {
@@ -60,34 +61,6 @@ fun CameraPreview(
         var previewView by remember { mutableStateOf<PreviewView?>(null) }
         var detector by remember { mutableStateOf<FooDetector?>(null) }
         var analyzer by remember { mutableStateOf<CameraPreviewAnalyzer?>(null) }
-
-        // Initialize detector
-        LaunchedEffect(Unit) {
-                try {
-                        detector =
-                                FooDetector(
-                                        context,
-                                        "models/best_plain_float16.tflite",
-                                        accelerator = Accelerator.GPU,
-                                        numThreads = 4
-                                )
-                        detector?.setConfidenceThreshold(currentConfidenceThreshold)
-                        detector?.setNmsEnabled(currentNmsEnabled)
-                        Log.d("CameraPreview", "FooDetector initialized successfully")
-                } catch (e: Exception) {
-                        Log.e("CameraPreview", "Failed to initialize FooDetector", e)
-                }
-        }
-
-        LaunchedEffect(currentConfidenceThreshold) {
-                detector?.setConfidenceThreshold(currentConfidenceThreshold)
-                Log.d("CameraPreview", "Applied confidence threshold: $currentConfidenceThreshold")
-        }
-
-        LaunchedEffect(currentNmsEnabled) {
-                detector?.setNmsEnabled(currentNmsEnabled)
-                Log.d("CameraPreview", "Applied NMS enabled: $currentNmsEnabled")
-        }
 
         fun applyResolution(resolution: Size) {
                 previewView?.let { preview ->
@@ -174,6 +147,39 @@ fun CameraPreview(
                 }
         }
 
+        // Initialize detector when model changes
+        LaunchedEffect(modelId) {
+                detector?.close()
+                detector = null
+                try {
+                        val newDetector =
+                                FooDetector(
+                                        context,
+                                        modelPath = modelId,
+                                        accelerator = Accelerator.GPU,
+                                        numThreads = 4
+                                ).also {
+                                        it.setConfidenceThreshold(currentConfidenceThreshold)
+                                        it.setNmsEnabled(currentNmsEnabled)
+                                }
+                        detector = newDetector
+                        Log.d("CameraPreview", "FooDetector initialized with model: $modelId")
+                        currentResolution?.let { applyResolution(it) }
+                } catch (e: Exception) {
+                        Log.e("CameraPreview", "Failed to initialize FooDetector", e)
+                }
+        }
+
+        LaunchedEffect(currentConfidenceThreshold) {
+                detector?.setConfidenceThreshold(currentConfidenceThreshold)
+                Log.d("CameraPreview", "Applied confidence threshold: $currentConfidenceThreshold")
+        }
+
+        LaunchedEffect(currentNmsEnabled) {
+                detector?.setNmsEnabled(currentNmsEnabled)
+                Log.d("CameraPreview", "Applied NMS enabled: $currentNmsEnabled")
+        }
+
         LaunchedEffect(currentResolution) {
                 currentResolution?.let { resolution -> applyResolution(resolution) }
         }
@@ -181,7 +187,12 @@ fun CameraPreview(
         LaunchedEffect(currentScanStrategy) { analyzer?.setScanStrategy(currentScanStrategy) }
 
         DisposableEffect(Unit) {
-                onDispose { onCameraReady(null) }
+                onDispose {
+                        analyzer = null
+                        detector?.close()
+                        detector = null
+                        onCameraReady(null)
+                }
         }
 
         Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
