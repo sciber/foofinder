@@ -26,7 +26,7 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
             val resolution: Size? = null,
             val modelId: String = DEFAULT_MODEL_ID,
             val scanStrategy: CameraPreviewAnalyzer.ScanStrategy =
-                    CameraPreviewAnalyzer.ScanStrategy.RANDOM,
+                    CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER,
             val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
             val maxBoxes: Int = DEFAULT_MAX_BOXES,
             val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED
@@ -92,10 +92,10 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
 
     private fun String.toScanStrategy(): CameraPreviewAnalyzer.ScanStrategy {
         return try {
-            if (isBlank()) CameraPreviewAnalyzer.ScanStrategy.RANDOM
+            if (isBlank()) CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER
             else CameraPreviewAnalyzer.ScanStrategy.valueOf(this)
         } catch (_: IllegalArgumentException) {
-            CameraPreviewAnalyzer.ScanStrategy.RANDOM
+            CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER
         }
     }
 

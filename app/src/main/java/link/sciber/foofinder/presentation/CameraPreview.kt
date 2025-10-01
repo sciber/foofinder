@@ -50,10 +50,12 @@ fun CameraPreview(
         currentMaxBoxes: Int,
         currentNmsEnabled: Boolean,
         currentScanStrategy: CameraPreviewAnalyzer.ScanStrategy =
-                CameraPreviewAnalyzer.ScanStrategy.RANDOM,
+                CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER,
         modelId: String = "models/best_plain_float16.tflite",
         modifier: Modifier = Modifier,
-        onCameraReady: (Camera?) -> Unit = {}
+        onCameraReady: (Camera?) -> Unit = {},
+        onScanStrategyAutoChange: (CameraPreviewAnalyzer.ScanStrategy) -> Unit = {},
+        onScanStrategyConstraintChange: (Boolean) -> Unit = {}
 ) {
         val lifecycleOwner = LocalLifecycleOwner.current
         val context = LocalContext.current
@@ -61,6 +63,35 @@ fun CameraPreview(
         var previewView by remember { mutableStateOf<PreviewView?>(null) }
         var detector by remember { mutableStateOf<FooDetector?>(null) }
         var analyzer by remember { mutableStateOf<CameraPreviewAnalyzer?>(null) }
+
+        fun requiresScaledSingle(det: FooDetector?, resolution: Size?): Boolean {
+                val tileSize = det?.getModelInputSize() ?: return false
+                val target = resolution ?: return false
+                return min(target.width, target.height) < tileSize
+        }
+
+        fun resolveStrategy(
+                requested: CameraPreviewAnalyzer.ScanStrategy,
+                det: FooDetector?,
+                resolution: Size?,
+                notify: Boolean
+        ): CameraPreviewAnalyzer.ScanStrategy {
+                val needsScaledSingle = requiresScaledSingle(det, resolution)
+                if (notify) {
+                        onScanStrategyConstraintChange(needsScaledSingle)
+                }
+                return if (needsScaledSingle &&
+                                requested != CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE) {
+                        if (notify) {
+                                onScanStrategyAutoChange(
+                                        CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
+                                )
+                        }
+                        CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
+                } else {
+                        requested
+                }
+        }
 
         fun applyResolution(resolution: Size) {
                 previewView?.let { preview ->
@@ -70,6 +101,14 @@ fun CameraPreview(
                                                 "CameraPreview",
                                                 "Applying resolution: ${resolution.width}x${resolution.height}"
                                         )
+
+                                        val effectiveStrategy =
+                                                resolveStrategy(
+                                                        currentScanStrategy,
+                                                        det,
+                                                        resolution,
+                                                        notify = true
+                                                )
 
                                         val cameraProviderFuture =
                                                 ProcessCameraProvider.getInstance(context)
@@ -115,7 +154,7 @@ fun CameraPreview(
                                                                         )
                                                                         .also {
                                                                                 it.setScanStrategy(
-                                                                                        currentScanStrategy
+                                                                                        effectiveStrategy
                                                                                 )
                                                                         }
                                                         analyzer = createdAnalyzer
@@ -130,7 +169,8 @@ fun CameraPreview(
                                                         val camera =
                                                                 cameraProvider.bindToLifecycle(
                                                                         lifecycleOwner,
-                                                                        CameraSelector.DEFAULT_BACK_CAMERA,
+                                                                        CameraSelector
+                                                                                .DEFAULT_BACK_CAMERA,
                                                                         previewUseCase,
                                                                         imageAnalysisUseCase
                                                                 )
@@ -154,14 +194,17 @@ fun CameraPreview(
                 try {
                         val newDetector =
                                 FooDetector(
-                                        context,
-                                        modelPath = modelId,
-                                        accelerator = Accelerator.GPU,
-                                        numThreads = 4
-                                ).also {
-                                        it.setConfidenceThreshold(currentConfidenceThreshold)
-                                        it.setNmsEnabled(currentNmsEnabled)
-                                }
+                                                context,
+                                                modelPath = modelId,
+                                                accelerator = Accelerator.GPU,
+                                                numThreads = 4
+                                        )
+                                        .also {
+                                                it.setConfidenceThreshold(
+                                                        currentConfidenceThreshold
+                                                )
+                                                it.setNmsEnabled(currentNmsEnabled)
+                                        }
                         detector = newDetector
                         Log.d("CameraPreview", "FooDetector initialized with model: $modelId")
                         currentResolution?.let { applyResolution(it) }
@@ -184,7 +227,16 @@ fun CameraPreview(
                 currentResolution?.let { resolution -> applyResolution(resolution) }
         }
 
-        LaunchedEffect(currentScanStrategy) { analyzer?.setScanStrategy(currentScanStrategy) }
+        LaunchedEffect(currentScanStrategy, detector, currentResolution) {
+                val effective =
+                        resolveStrategy(
+                                currentScanStrategy,
+                                detector,
+                                currentResolution,
+                                notify = true
+                        )
+                analyzer?.setScanStrategy(effective)
+        }
 
         DisposableEffect(Unit) {
                 onDispose {

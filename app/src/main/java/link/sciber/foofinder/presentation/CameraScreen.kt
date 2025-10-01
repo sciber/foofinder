@@ -72,6 +72,7 @@ fun CameraScreen() {
         var currentCamera by remember { mutableStateOf<Camera?>(null) }
         var isTorchAvailable by remember { mutableStateOf(false) }
         var isTorchEnabled by remember { mutableStateOf(false) }
+        var scanStrategyConstrained by remember { mutableStateOf(false) }
 
         val settingsViewModel: CameraSettingsViewModel = viewModel()
         val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
@@ -216,11 +217,23 @@ fun CameraScreen() {
                                                         title = "Scanning Strategy",
                                                         options = strategyLabels,
                                                         selectedIndex = selectedStrategyIndex,
+                                                        isOptionEnabled = { idx ->
+                                                                val strategy = strategies.getOrNull(idx)
+                                                                if (!scanStrategyConstrained) {
+                                                                        true
+                                                                } else {
+                                                                        strategy == CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
+                                                                }
+                                                        },
                                                         onSelectedIndex = { idx ->
                                                                 if (idx in strategies.indices) {
-                                                                        settingsViewModel.onScanStrategyChanged(
-                                                                                strategies[idx]
-                                                                        )
+                                                                        val strategy = strategies[idx]
+                                                                        if (!scanStrategyConstrained ||
+                                                                                        strategy == CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE) {
+                                                                                settingsViewModel.onScanStrategyChanged(
+                                                                                        strategy
+                                                                                )
+                                                                        }
                                                                 }
                                                         }
                                                 )
@@ -336,7 +349,17 @@ fun CameraScreen() {
                                         currentScanStrategy = currentScanStrategy,
                                         modelId = currentModelId,
                                         modifier = Modifier.fillMaxSize(),
-                                        onCameraReady = { camera -> currentCamera = camera }
+                                        onCameraReady = { camera -> currentCamera = camera },
+                                        onScanStrategyAutoChange = { enforced ->
+                                                if (enforced != currentScanStrategy) {
+                                                        settingsViewModel.onScanStrategyChanged(
+                                                                enforced
+                                                        )
+                                                }
+                                        },
+                                        onScanStrategyConstraintChange = { constrained ->
+                                                scanStrategyConstrained = constrained
+                                        }
                                 )
                         }
 
@@ -394,6 +417,7 @@ private fun LabeledDropdown(
         title: String,
         options: List<String>,
         selectedIndex: Int,
+        isOptionEnabled: (Int) -> Boolean = { true },
         onSelectedIndex: (Int) -> Unit
 ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -413,9 +437,12 @@ private fun LabeledDropdown(
                 )
                 androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         options.forEachIndexed { idx, label ->
+                                val enabled = isOptionEnabled(idx)
                                 androidx.compose.material3.DropdownMenuItem(
                                         text = { Text(label) },
+                                        enabled = enabled,
                                         onClick = {
+                                                if (!enabled) return@DropdownMenuItem
                                                 expanded = false
                                                 onSelectedIndex(idx)
                                         }

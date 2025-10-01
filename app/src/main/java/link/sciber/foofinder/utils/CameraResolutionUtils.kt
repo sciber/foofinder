@@ -153,6 +153,8 @@ object CameraResolutionUtils {
 
     /** Sort resolutions by width for display in dialog (portrait mode) */
     fun sortResolutionsByWidth(resolutions: List<Size>): List<Size> {
-        return resolutions.sortedBy { it.width }
+        return resolutions.sortedWith(
+                compareByDescending<Size> { it.width }.thenByDescending { it.height }
+        )
     }
 }
