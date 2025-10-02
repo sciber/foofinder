@@ -1,6 +1,8 @@
 package link.sciber.foofinder.presentation
 
 import android.util.Size
+import androidx.camera.core.Camera
+import androidx.camera.core.TorchState
 import androidx.camera.view.LifecycleCameraController
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,10 +22,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,8 +39,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberBottomSheetScaffoldState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,8 +62,6 @@ import kotlin.math.roundToInt
 import link.sciber.foofinder.R
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.utils.CameraResolutionUtils
-import androidx.camera.core.Camera
-import androidx.camera.core.TorchState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,9 +83,7 @@ fun CameraScreen() {
         val currentScanStrategy = settingsState.scanStrategy
 
         val modelOptions = remember {
-                listOf(
-                        "models/best_plain_float16.tflite" to "DeePoo YOLOX Nano"
-                )
+                listOf("models/best_plain_float16.tflite" to "DeePoo YOLOX Nano")
         }
 
         val currentConfidenceThreshold = settingsState.confidenceThreshold
@@ -104,9 +103,7 @@ fun CameraScreen() {
 
                 val persisted = currentResolution
                 val targetResolution =
-                        persisted?.let { saved ->
-                                availableResolutions.find { it == saved }
-                        }
+                        persisted?.let { saved -> availableResolutions.find { it == saved } }
                                 ?: CameraResolutionUtils.findBestDefaultResolution(
                                         availableResolutions
                                 )
@@ -130,15 +127,12 @@ fun CameraScreen() {
         DisposableEffect(currentCamera) {
                 val cam = currentCamera
                 if (cam == null) {
-                        onDispose { }
+                        onDispose {}
                 } else {
-                        val torchObserver = Observer<Int> { state ->
-                                isTorchEnabled = state == TorchState.ON
-                        }
+                        val torchObserver =
+                                Observer<Int> { state -> isTorchEnabled = state == TorchState.ON }
                         cam.cameraInfo.torchState.observeForever(torchObserver)
-                        onDispose {
-                                cam.cameraInfo.torchState.removeObserver(torchObserver)
-                        }
+                        onDispose { cam.cameraInfo.torchState.removeObserver(torchObserver) }
                 }
         }
 
@@ -148,7 +142,7 @@ fun CameraScreen() {
                         val desiredState = !isTorchEnabled
                         cam.cameraControl
                                 .enableTorch(desiredState)
-                                .addListener(Runnable { }, mainExecutor)
+                                .addListener(Runnable {}, mainExecutor)
                 }
         }
 
@@ -161,29 +155,47 @@ fun CameraScreen() {
                 sheetContainerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
                 sheetDragHandle = {
                         Column(
+                                modifier = Modifier.padding(top = 16.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                                 Box(
-                                        modifier = Modifier
-                                                .height(4.dp)
-                                                .width(32.dp)
-                                                .clip(RoundedCornerShape(50))
-                                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                                        modifier =
+                                                Modifier.height(4.dp)
+                                                        .width(32.dp)
+                                                        .clip(RoundedCornerShape(50))
+                                                        .background(
+                                                                MaterialTheme.colorScheme
+                                                                        .outlineVariant.copy(
+                                                                        alpha = 0.6f
+                                                                )
+                                                        )
                                 )
                         }
                 },
                 sheetContent = {
                         Column(
-                                modifier = Modifier
-                                        .fillMaxWidth()
-                                        .verticalScroll(sheetScrollState)
-                                        .padding(horizontal = 16.dp)
-                                        .padding(bottom = navInsets.calculateBottomPadding() + 16.dp),
+                                modifier =
+                                        Modifier.fillMaxWidth()
+                                                .verticalScroll(sheetScrollState)
+                                                .padding(top = 8.dp)
+                                                .padding(horizontal = 16.dp)
+                                                .padding(
+                                                        bottom =
+                                                                navInsets.calculateBottomPadding() +
+                                                                        16.dp
+                                                ),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                                 SectionTitle("Detection")
-                                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                                Card(
+                                        colors =
+                                                CardDefaults.cardColors(
+                                                        containerColor =
+                                                                MaterialTheme.colorScheme
+                                                                        .surfaceVariant
+                                                )
+                                ) {
                                         Column(
                                                 modifier = Modifier.padding(12.dp),
                                                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -192,61 +204,96 @@ fun CameraScreen() {
                                                         title = "Confidence Threshold",
                                                         value = currentConfidenceThreshold,
                                                         onValueChange = { value ->
-                                                                settingsViewModel.onConfidenceThresholdChanged(value)
+                                                                settingsViewModel
+                                                                        .onConfidenceThresholdChanged(
+                                                                                value
+                                                                        )
                                                         },
-                                                        valueFormatter = { v -> (v * 100).toInt().toString() },
+                                                        valueFormatter = { v ->
+                                                                (v * 100).toInt().toString()
+                                                        },
                                                         range = 0f..1f
                                                 )
                                                 LabeledSlider(
                                                         title = "Maximum Boxes",
                                                         value = currentMaxBoxes.toFloat(),
                                                         onValueChange = { value ->
-                                                                settingsViewModel.onMaxBoxesChanged(value.roundToInt())
+                                                                settingsViewModel.onMaxBoxesChanged(
+                                                                        value.roundToInt()
+                                                                )
                                                         },
-                                                        valueFormatter = { v -> v.toInt().toString() },
+                                                        valueFormatter = { v ->
+                                                                v.toInt().toString()
+                                                        },
                                                         range = 1f..100f
                                                 )
-                                                val strategies = CameraPreviewAnalyzer.ScanStrategy.entries
-                                                val strategyLabels = strategies.map { entry ->
-                                                        entry.name.replace('_', ' ')
-                                                                .lowercase()
-                                                                .replaceFirstChar { it.uppercase() }
-                                                }
-                                                val selectedStrategyIndex = strategies.indexOf(currentScanStrategy)
+                                                val strategies =
+                                                        CameraPreviewAnalyzer.ScanStrategy.entries
+                                                val strategyLabels =
+                                                        strategies.map { entry ->
+                                                                entry.name
+                                                                        .replace('_', ' ')
+                                                                        .lowercase()
+                                                                        .replaceFirstChar {
+                                                                                it.uppercase()
+                                                                        }
+                                                        }
+                                                val selectedStrategyIndex =
+                                                        strategies.indexOf(currentScanStrategy)
                                                 LabeledDropdown(
                                                         title = "Scanning Strategy",
                                                         options = strategyLabels,
                                                         selectedIndex = selectedStrategyIndex,
                                                         isOptionEnabled = { idx ->
-                                                                val strategy = strategies.getOrNull(idx)
+                                                                val strategy =
+                                                                        strategies.getOrNull(idx)
                                                                 if (!scanStrategyConstrained) {
                                                                         true
                                                                 } else {
-                                                                        strategy == CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
+                                                                        strategy ==
+                                                                                CameraPreviewAnalyzer
+                                                                                        .ScanStrategy
+                                                                                        .SCALED_SINGLE
                                                                 }
                                                         },
                                                         onSelectedIndex = { idx ->
                                                                 if (idx in strategies.indices) {
-                                                                        val strategy = strategies[idx]
+                                                                        val strategy =
+                                                                                strategies[idx]
                                                                         if (!scanStrategyConstrained ||
-                                                                                        strategy == CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE) {
-                                                                                settingsViewModel.onScanStrategyChanged(
-                                                                                        strategy
-                                                                                )
+                                                                                        strategy ==
+                                                                                                CameraPreviewAnalyzer
+                                                                                                        .ScanStrategy
+                                                                                                        .SCALED_SINGLE
+                                                                        ) {
+                                                                                settingsViewModel
+                                                                                        .onScanStrategyChanged(
+                                                                                                strategy
+                                                                                        )
                                                                         }
                                                                 }
                                                         }
                                                 )
                                                 Row(
                                                         modifier = Modifier.fillMaxWidth(),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                                        verticalAlignment = Alignment.CenterVertically
+                                                        horizontalArrangement =
+                                                                Arrangement.SpaceBetween,
+                                                        verticalAlignment =
+                                                                Alignment.CenterVertically
                                                 ) {
-                                                        Text("Enable NMS", style = MaterialTheme.typography.bodyMedium)
+                                                        Text(
+                                                                "Enable NMS",
+                                                                style =
+                                                                        MaterialTheme.typography
+                                                                                .bodyMedium
+                                                        )
                                                         Switch(
                                                                 checked = currentNmsEnabled,
                                                                 onCheckedChange = { enabled ->
-                                                                        settingsViewModel.onNmsEnabledChanged(enabled)
+                                                                        settingsViewModel
+                                                                                .onNmsEnabledChanged(
+                                                                                        enabled
+                                                                                )
                                                                 }
                                                         )
                                                 }
@@ -254,17 +301,27 @@ fun CameraScreen() {
                                 }
 
                                 SectionTitle("Camera")
-                                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                                Card(
+                                        colors =
+                                                CardDefaults.cardColors(
+                                                        containerColor =
+                                                                MaterialTheme.colorScheme
+                                                                        .surfaceVariant
+                                                )
+                                ) {
                                         Column(
                                                 modifier = Modifier.padding(12.dp),
                                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                                val resLabels = availableResolutions.map { r -> CameraResolutionUtils.formatResolution(r) }
+                                                val resLabels =
+                                                        availableResolutions.map { r ->
+                                                                CameraResolutionUtils
+                                                                        .formatResolution(r)
+                                                        }
                                                 val selectedIdx =
                                                         currentResolution?.let { sel ->
-                                                                availableResolutions.indexOfFirst {
-                                                                        it == sel
-                                                                }
+                                                                availableResolutions
+                                                                        .indexOfFirst { it == sel }
                                                                         .takeIf { it >= 0 }
                                                         }
                                                                 ?: -1
@@ -273,10 +330,15 @@ fun CameraScreen() {
                                                         options = resLabels,
                                                         selectedIndex = selectedIdx,
                                                         onSelectedIndex = { idx ->
-                                                                if (idx in availableResolutions.indices) {
-                                                                        settingsViewModel.onResolutionChanged(
-                                                                                availableResolutions[idx]
-                                                                        )
+                                                                if (idx in
+                                                                                availableResolutions
+                                                                                        .indices
+                                                                ) {
+                                                                        settingsViewModel
+                                                                                .onResolutionChanged(
+                                                                                        availableResolutions[
+                                                                                                idx]
+                                                                                )
                                                                 }
                                                         }
                                                 )
@@ -284,15 +346,23 @@ fun CameraScreen() {
                                 }
 
                                 SectionTitle("Model")
-                                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                                Card(
+                                        colors =
+                                                CardDefaults.cardColors(
+                                                        containerColor =
+                                                                MaterialTheme.colorScheme
+                                                                        .surfaceVariant
+                                                )
+                                ) {
                                         Column(
                                                 modifier = Modifier.padding(12.dp),
                                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                                 val selectedModelIndex =
-                                                        modelOptions.indexOfFirst {
-                                                                it.first == currentModelId
-                                                        }
+                                                        modelOptions
+                                                                .indexOfFirst {
+                                                                        it.first == currentModelId
+                                                                }
                                                                 .takeIf { it >= 0 }
                                                                 ?: 0
                                                 LabeledDropdown(
@@ -301,27 +371,28 @@ fun CameraScreen() {
                                                         selectedIndex = selectedModelIndex,
                                                         onSelectedIndex = { idx ->
                                                                 if (idx in modelOptions.indices) {
-                                                                        settingsViewModel.onModelChanged(
-                                                                                modelOptions[idx].first
-                                                                        )
+                                                                        settingsViewModel
+                                                                                .onModelChanged(
+                                                                                        modelOptions[
+                                                                                                        idx]
+                                                                                                .first
+                                                                                )
                                                                 }
                                                         }
                                                 )
                                                 Text(
                                                         "Input size: 640 × 640",
                                                         style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        color =
+                                                                MaterialTheme.colorScheme
+                                                                        .onSurfaceVariant
                                                 )
                                         }
                                 }
                         }
                 }
         ) { paddingValues ->
-                Column(
-                        modifier = Modifier
-                                .fillMaxSize()
-                                .padding(paddingValues)
-                ) {
+                Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
                         TopBar(
                                 isTorchEnabled = isTorchEnabled,
                                 isTorchAvailable = isTorchAvailable,
@@ -329,11 +400,10 @@ fun CameraScreen() {
                         )
 
                         Box(
-                                modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp)
-                                        .aspectRatio(1f),
-                                contentAlignment = Alignment.Center
+                                modifier =
+                                        Modifier.fillMaxWidth()
+                                                .padding(horizontal = 16.dp)
+                                                .aspectRatio(1f)
                         ) {
                                 CameraPreview(
                                         controller = controller,
@@ -342,7 +412,9 @@ fun CameraScreen() {
                                                 settingsViewModel.onResolutionChanged(resolution)
                                         },
                                         currentDetection = currentDetection,
-                                        onDetectionResult = { detection -> currentDetection = detection },
+                                        onDetectionResult = { detection ->
+                                                currentDetection = detection
+                                        },
                                         currentConfidenceThreshold = currentConfidenceThreshold,
                                         currentMaxBoxes = currentMaxBoxes,
                                         currentNmsEnabled = currentNmsEnabled,
@@ -364,35 +436,53 @@ fun CameraScreen() {
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
-                        InfoBar(currentDetection = currentDetection)
+                        InfoBar(
+                                currentDetection = currentDetection,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                onSnapshotClick = { /* TODO: Save analyzed image */}
+                        )
                 }
         }
 }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun TopBar(
-        isTorchEnabled: Boolean,
-        isTorchAvailable: Boolean,
-        onToggleTorch: () -> Unit
-) {
+private fun TopBar(isTorchEnabled: Boolean, isTorchAvailable: Boolean, onToggleTorch: () -> Unit) {
         TopAppBar(
                 title = { Text("FooFinder", fontWeight = FontWeight.SemiBold) },
                 actions = {
-                        val iconRes = if (isTorchEnabled) R.drawable.flashlight_on_24 else R.drawable.flashlight_off_24
-                        val contentDescription = if (isTorchEnabled) "Flashlight On" else "Flashlight Off"
+                        val iconRes =
+                                if (isTorchEnabled) R.drawable.flashlight_on_24
+                                else R.drawable.flashlight_off_24
+                        val contentDescription =
+                                if (isTorchEnabled) "Flashlight On" else "Flashlight Off"
                         IconButton(onClick = onToggleTorch, enabled = isTorchAvailable) {
-                                Icon(painter = painterResource(id = iconRes), contentDescription = contentDescription)
+                                Icon(
+                                        painter = painterResource(id = iconRes),
+                                        contentDescription = contentDescription
+                                )
                         }
-                        IconButton(onClick = { /* TODO: grid */ }) { Icon(painter = painterResource(id = R.drawable.dataset_24), contentDescription = "Dataset") }
+                        IconButton(onClick = { /* TODO: grid */}) {
+                                Icon(
+                                        painter = painterResource(id = R.drawable.dataset_24),
+                                        contentDescription = "Dataset"
+                                )
+                        }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors =
+                        TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.background
+                        )
         )
 }
 
 @Composable
 private fun SectionTitle(title: String) {
-        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+        Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp)
+        )
 }
 
 @Composable
@@ -404,9 +494,16 @@ private fun LabeledSlider(
         range: ClosedFloatingPointRange<Float>
 ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                         Text("$title:", style = MaterialTheme.typography.bodyMedium)
-                        Text(valueFormatter(value), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                                valueFormatter(value),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                        )
                 }
                 Slider(value = value, onValueChange = onValueChange, valueRange = range)
         }
@@ -435,7 +532,10 @@ private fun LabeledDropdown(
                                 }
                         }
                 )
-                androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                androidx.compose.material3.DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                ) {
                         options.forEachIndexed { idx, label ->
                                 val enabled = isOptionEnabled(idx)
                                 androidx.compose.material3.DropdownMenuItem(
@@ -453,29 +553,84 @@ private fun LabeledDropdown(
 }
 
 @Composable
-private fun InfoBar(currentDetection: Detection?) {
+private fun InfoBar(
+        currentDetection: Detection?,
+        modifier: Modifier = Modifier,
+        onSnapshotClick: (() -> Unit)? = null
+) {
         Card(
-                modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF607D8B)) // blue grey
+                modifier = modifier.padding(vertical = 8.dp),
+                colors =
+                        CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
         ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                        val fpsText = currentDetection?.let { if (it.fps >= 0f) String.format("%.1f", it.fps) else "-" } ?: "-"
-                        val infText = currentDetection?.let { if (it.inferenceMs >= 0) "${it.inferenceMs} ms" else "-" } ?: "-"
-                        val objectsText = currentDetection?.afterNmsDetections ?: 0
-                        val tileText = "640 × 640" // placeholder
-                        val delegateText = "CPU/XNNPACK(4t)" // placeholder until wired from detector
+                Box(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                                val fpsText =
+                                        currentDetection?.let {
+                                                if (it.fps >= 0f) String.format("%.1f", it.fps)
+                                                else "-"
+                                        }
+                                                ?: "-"
+                                val infText =
+                                        currentDetection?.let {
+                                                if (it.inferenceMs >= 0) "${it.inferenceMs} ms"
+                                                else "-"
+                                        }
+                                                ?: "-"
+                                val objectsText = currentDetection?.afterNmsDetections ?: 0
+                                val tileText = "640 × 640" // placeholder
+                                val delegateText =
+                                        "CPU/XNNPACK(4t)" // placeholder until wired from detector
 
-                        Text(buildString { append("Object(s): "); append(objectsText) }, color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("FPS: $fpsText", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Inference: $infText", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Tile: $tileText", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Delegate: $delegateText", color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                        buildString {
+                                                append("Object(s): ")
+                                                append(objectsText)
+                                        },
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                        "FPS: $fpsText",
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                        "Inference: $infText",
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                        "Tile: $tileText",
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                        "Delegate: $delegateText",
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        style = MaterialTheme.typography.bodyMedium
+                                )
+                        }
+
+                        if (onSnapshotClick != null) {
+                                FloatingActionButton(
+                                        onClick = onSnapshotClick,
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+                                ) {
+                                        Icon(
+                                                painter =
+                                                        painterResource(id = R.drawable.camera_24),
+                                                contentDescription = "Save analyzed image"
+                                        )
+                                }
+                        }
                 }
         }
 }
