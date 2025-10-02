@@ -3,6 +3,7 @@ package link.sciber.foofinder.presentation
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.util.Log
@@ -10,6 +11,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import java.io.ByteArrayOutputStream
 import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -23,6 +25,7 @@ class CameraPreviewAnalyzer(
 ) : ImageAnalysis.Analyzer {
 
         private var tileIndex: Int = 0
+        private val pendingTileCapture = AtomicReference<TileCaptureCallback?>(null)
 
         /** Scanning strategies for object detection. */
         enum class ScanStrategy {
@@ -32,6 +35,22 @@ class CameraPreviewAnalyzer(
                 COLUMNS,
                 RANDOM
         }
+
+        data class TileCaptureResult(
+                val bitmap: Bitmap,
+                val area: DetectionArea,
+                val rotationDegrees: Int,
+                val timestampMs: Long
+        )
+
+        fun interface TileCaptureCallback {
+                fun onTileCaptured(result: TileCaptureResult?)
+        }
+
+        fun requestTileCapture(callback: TileCaptureCallback): Boolean {
+                return pendingTileCapture.compareAndSet(null, callback)
+        }
+
         private var strategy = ScanStrategy.RANDOM
 
         companion object {
@@ -87,11 +106,23 @@ class CameraPreviewAnalyzer(
                         if (bitmap != null) {
                                 val detectStart = System.nanoTime()
                                 val baseSide = min(bitmap.width, bitmap.height)
+                                val modelInputSize = detector.getModelInputSize().coerceAtLeast(1)
+                                var detectionAreaUsed: DetectionArea? = null
 
                                 val detection =
                                         when (strategy) {
                                                 ScanStrategy.SCALED_SINGLE ->
-                                                        detector.detect(bitmap)
+                                                        detector
+                                                                .detect(bitmap)
+                                                                .also {
+                                                                        detectionAreaUsed =
+                                                                                DetectionArea(
+                                                                                        0f,
+                                                                                        0f,
+                                                                                        baseSide.toFloat(),
+                                                                                        baseSide.toFloat()
+                                                                                )
+                                                                }
                                                 ScanStrategy.SINGLE_CENTER -> {
                                                         val tileSize =
                                                                 detector.getModelInputSize()
@@ -109,94 +140,49 @@ class CameraPreviewAnalyzer(
                                                                                 rotationDegrees
                                                                 )
 
-                                                        detector.detectInArea(bitmap, area)
+                                                        detector
+                                                                .detectInArea(bitmap, area)
+                                                                .also { detectionAreaUsed = area }
                                                 }
                                                 ScanStrategy.ROWS, ScanStrategy.COLUMNS -> {
                                                         val tileSize =
                                                                 detector.getModelInputSize()
                                                                         .coerceAtMost(baseSide)
-                                                        val stepsX =
-                                                                max(
-                                                                        1,
-                                                                        ceil(
-                                                                                        baseSide.toFloat() /
-                                                                                                tileSize
-                                                                                )
-                                                                                .toInt()
-                                                                )
-                                                        val stepsY =
-                                                                max(
-                                                                        1,
-                                                                        ceil(
-                                                                                        baseSide.toFloat() /
-                                                                                                tileSize
-                                                                                )
-                                                                                .toInt()
-                                                                )
-                                                        val totalTiles = stepsX * stepsY
-
                                                         val area =
                                                                 computeTileArea(
                                                                         baseStartX = 0,
                                                                         baseStartY = 0,
                                                                         baseSide = baseSide,
                                                                         tileSize = tileSize,
-                                                                        index = tileIndex,
+                                                                        index = tileIndex++,
                                                                         strategy = strategy,
                                                                         rotationDegrees =
                                                                                 rotationDegrees
                                                                 )
 
-                                                        if (totalTiles > 0) {
-                                                                tileIndex =
-                                                                        (tileIndex + 1) % totalTiles
-                                                        }
-
-                                                        detector.detectInArea(bitmap, area)
+                                                        detector
+                                                                .detectInArea(bitmap, area)
+                                                                .also { detectionAreaUsed = area }
                                                 }
                                                 ScanStrategy.RANDOM -> {
                                                         val tileSize =
                                                                 detector.getModelInputSize()
                                                                         .coerceAtMost(baseSide)
-                                                        val stepsX =
-                                                                max(
-                                                                        1,
-                                                                        ceil(
-                                                                                        baseSide.toFloat() /
-                                                                                                tileSize
-                                                                                )
-                                                                                .toInt()
-                                                                )
-                                                        val stepsY =
-                                                                max(
-                                                                        1,
-                                                                        ceil(
-                                                                                        baseSide.toFloat() /
-                                                                                                tileSize
-                                                                                )
-                                                                                .toInt()
-                                                                )
-                                                        val totalTiles = stepsX * stepsY
-                                                        val randomIndex =
-                                                                if (totalTiles > 0)
-                                                                        kotlin.random.Random
-                                                                                .nextInt(totalTiles)
-                                                                else 0
-
                                                         val area =
                                                                 computeTileArea(
                                                                         baseStartX = 0,
                                                                         baseStartY = 0,
                                                                         baseSide = baseSide,
                                                                         tileSize = tileSize,
-                                                                        index = randomIndex,
-                                                                        strategy =
-                                                                                ScanStrategy.RANDOM,
+                                                                        index = tileIndex++,
+                                                                        strategy = ScanStrategy.RANDOM,
                                                                         rotationDegrees =
                                                                                 rotationDegrees
                                                                 )
 
-                                                        detector.detectInArea(bitmap, area)
+                                                        detector
+                                                                .detectInArea(bitmap, area)
+                                                                .also { detectionAreaUsed = area }
                                                 }
                                         }
 
@@ -239,6 +225,13 @@ class CameraPreviewAnalyzer(
                                         "Detection completed: ${transformedDetection.boundingBoxes.size} objects detected"
                                 )
 
+                                handlePendingTileCapture(
+                                        frameBitmap = bitmap,
+                                        area = detectionAreaUsed,
+                                        rotationDegrees = rotationDegrees,
+                                        modelInputSize = modelInputSize
+                                )
+
                                 val analyzeMs = (System.nanoTime() - analyzeStart) / 1_000_000L
                                 Log.d(
                                         TAG,
@@ -255,6 +248,82 @@ class CameraPreviewAnalyzer(
                         onDetectionResult(emptyDetectionResult())
                 } finally {
                         imageProxy.close()
+                }
+        }
+
+        private fun handlePendingTileCapture(
+                frameBitmap: Bitmap,
+                area: DetectionArea?,
+                rotationDegrees: Int,
+                modelInputSize: Int
+        ) {
+                val callback = pendingTileCapture.getAndSet(null) ?: return
+                if (area == null || area.width <= 0f || area.height <= 0f) {
+                        Log.w(TAG, "Tile capture requested but area invalid: $area")
+                        callback.onTileCaptured(null)
+                        return
+                }
+                try {
+                        val startX = area.startX.toInt().coerceIn(0, frameBitmap.width - 1)
+                        val startY = area.startY.toInt().coerceIn(0, frameBitmap.height - 1)
+                        val maxWidth = frameBitmap.width - startX
+                        val maxHeight = frameBitmap.height - startY
+                        val desiredWidth = area.width.toInt().coerceAtLeast(1)
+                        val desiredHeight = area.height.toInt().coerceAtLeast(1)
+                        val cropWidth = desiredWidth.coerceAtMost(maxWidth)
+                        val cropHeight = desiredHeight.coerceAtMost(maxHeight)
+
+                        if (cropWidth <= 0 || cropHeight <= 0) {
+                                Log.w(TAG, "Tile capture failed due to invalid crop size: ${cropWidth}x${cropHeight}")
+                                callback.onTileCaptured(null)
+                                return
+                        }
+
+                        var tile = Bitmap.createBitmap(frameBitmap, startX, startY, cropWidth, cropHeight)
+
+                        if (tile.width != modelInputSize || tile.height != modelInputSize) {
+                                val scaled =
+                                        Bitmap.createScaledBitmap(
+                                                tile,
+                                                modelInputSize,
+                                                modelInputSize,
+                                                true
+                                        )
+                                if (scaled !== tile) {
+                                        tile.recycle()
+                                }
+                                tile = scaled
+                        }
+
+                        if (rotationDegrees != 0) {
+                                val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+                                val rotated =
+                                        Bitmap.createBitmap(
+                                                tile,
+                                                0,
+                                                0,
+                                                tile.width,
+                                                tile.height,
+                                                matrix,
+                                                true
+                                        )
+                                if (rotated !== tile) {
+                                        tile.recycle()
+                                        tile = rotated
+                                }
+                        }
+
+                        callback.onTileCaptured(
+                                TileCaptureResult(
+                                        bitmap = tile,
+                                        area = area,
+                                        rotationDegrees = rotationDegrees,
+                                        timestampMs = System.currentTimeMillis()
+                                )
+                        )
+                } catch (e: Exception) {
+                        Log.e(TAG, "Tile capture failed", e)
+                        callback.onTileCaptured(null)
                 }
         }
 

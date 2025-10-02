@@ -39,6 +39,8 @@ import link.sciber.foofinder.data.detection.FooDetector
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
 
+typealias TileCaptureRequester = (CameraPreviewAnalyzer.TileCaptureCallback) -> Boolean
+
 @Composable
 fun CameraPreview(
         controller: LifecycleCameraController,
@@ -55,7 +57,8 @@ fun CameraPreview(
         modifier: Modifier = Modifier,
         onCameraReady: (Camera?) -> Unit = {},
         onScanStrategyAutoChange: (CameraPreviewAnalyzer.ScanStrategy) -> Unit = {},
-        onScanStrategyConstraintChange: (Boolean) -> Unit = {}
+        onScanStrategyConstraintChange: (Boolean) -> Unit = {},
+        onTileCaptureRequesterChange: (TileCaptureRequester?) -> Unit = {}
 ) {
         val lifecycleOwner = LocalLifecycleOwner.current
         val context = LocalContext.current
@@ -63,6 +66,16 @@ fun CameraPreview(
         var previewView by remember { mutableStateOf<PreviewView?>(null) }
         var detector by remember { mutableStateOf<FooDetector?>(null) }
         var analyzer by remember { mutableStateOf<CameraPreviewAnalyzer?>(null) }
+
+        LaunchedEffect(analyzer) {
+                val requester: TileCaptureRequester? =
+                        analyzer?.let { instance ->
+                                { callback: CameraPreviewAnalyzer.TileCaptureCallback ->
+                                        instance.requestTileCapture(callback)
+                                }
+                        }
+                onTileCaptureRequesterChange(requester)
+        }
 
         fun requiresScaledSingle(det: FooDetector?, resolution: Size?): Boolean {
                 val tileSize = det?.getModelInputSize() ?: return false
@@ -81,7 +94,8 @@ fun CameraPreview(
                         onScanStrategyConstraintChange(needsScaledSingle)
                 }
                 return if (needsScaledSingle &&
-                                requested != CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE) {
+                                requested != CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
+                ) {
                         if (notify) {
                                 onScanStrategyAutoChange(
                                         CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
@@ -240,6 +254,7 @@ fun CameraPreview(
 
         DisposableEffect(Unit) {
                 onDispose {
+                        onTileCaptureRequesterChange(null)
                         analyzer = null
                         detector?.close()
                         detector = null
