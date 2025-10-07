@@ -9,13 +9,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import link.sciber.foofinder.presentation.CameraScreen
-import link.sciber.foofinder.presentation.ModelTestScreen
 import link.sciber.foofinder.ui.theme.FooFinderTheme
 
 class MainActivity : ComponentActivity() {
@@ -30,14 +27,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             FooFinderTheme {
                 Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
+                    modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
                 ) {
                     CameraScreen()
-//                    ModelTestScreen(
-//                        testImageAssetPath = "test/images/23.jpg",
-//                        testLabelAssetPath = "test/labels/23.txt"
-//                    )
                 }
             }
         }
@@ -45,15 +37,16 @@ class MainActivity : ComponentActivity() {
 
     private fun hasRequiredPermissions(): Boolean {
         return CAMERAX_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(applicationContext, it) ==
-                    PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                applicationContext,
+                it
+            ) == PackageManager.PERMISSION_GRANTED
         }
     }
 
     companion object {
-        private val CAMERAX_PERMISSIONS =
-                arrayOf(
-                        Manifest.permission.CAMERA,
-                )
+        private val CAMERAX_PERMISSIONS = arrayOf(
+            Manifest.permission.CAMERA,
+        )
     }
 }
