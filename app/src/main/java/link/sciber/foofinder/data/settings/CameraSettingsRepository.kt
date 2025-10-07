@@ -2,15 +2,14 @@ package link.sciber.foofinder.data.settings
 
 import android.util.Size
 import androidx.datastore.core.DataStore
-import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
 import link.sciber.foofinder.datastore.UserSettings
 import link.sciber.foofinder.presentation.CameraPreviewAnalyzer
+import java.io.IOException
 
 class CameraSettingsRepository(
-        private val dataStore: DataStore<UserSettings>
+    private val dataStore: DataStore<UserSettings>
 ) {
 
     val settings: Flow<UserSettings> = dataStore.data.catch { throwable ->
