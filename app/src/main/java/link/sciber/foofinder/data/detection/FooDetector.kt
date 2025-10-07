@@ -3,9 +3,6 @@ package link.sciber.foofinder.data.detection
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import java.nio.MappedByteBuffer
-import kotlin.math.max
-import kotlin.math.min
 import link.sciber.foofinder.domain.BoundingBox
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
@@ -22,20 +19,21 @@ import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import java.nio.MappedByteBuffer
+import kotlin.math.max
+import kotlin.math.min
 
 enum class Accelerator {
-    CPU,
-    GPU,
-    NNAPI
+    CPU, GPU, NNAPI
 }
 
 class FooDetector(
-        private val context: Context,
-        modelPath: String,
-        private var confThreshold: Float = 0.45f,
-        private val iouThreshold: Float = 0.45f,
-        private val accelerator: Accelerator = Accelerator.CPU,
-        private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
+    context: Context,
+    modelPath: String,
+    private var confThreshold: Float = 0.45f,
+    private val iouThreshold: Float = 0.45f,
+    accelerator: Accelerator = Accelerator.CPU,
+    numThreads: Int = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
 ) : Detector {
     private var interpreter: Interpreter? = null
     private var gpuDelegate: GpuDelegate? = null
@@ -44,12 +42,12 @@ class FooDetector(
     private var nmsEnabled: Boolean = true
 
     // Model input/output details
-    private lateinit var modelInputDataType: DataType
-    private lateinit var modelInputShape: IntArray
-    private lateinit var modelOutputDataType: DataType
-    private lateinit var modelOutputShape: IntArray
+    private var modelInputDataType: DataType
+    private var modelInputShape: IntArray
+    private var modelOutputDataType: DataType
+    private var modelOutputShape: IntArray
 
-    private lateinit var imageProcessor: ImageProcessor
+    private var imageProcessor: ImageProcessor
 
     companion object {
         private const val TAG = "FooDetector"
@@ -75,14 +73,15 @@ class FooDetector(
                                     Log.d(TAG, "Using GPU delegate")
                                 } else {
                                     Log.w(
-                                            TAG,
-                                            "GPU delegate not supported on this device; skipping GPU"
+                                        TAG,
+                                        "GPU delegate not supported on this device; skipping GPU"
                                     )
                                 }
                             } catch (e: Throwable) {
                                 Log.w(TAG, "Failed to create GPU delegate, will fall back", e)
                             }
                         }
+
                         Accelerator.NNAPI -> {
                             try {
                                 nnApiDelegate = NnApiDelegate()
@@ -92,6 +91,7 @@ class FooDetector(
                                 Log.w(TAG, "Failed to create NNAPI delegate, will fall back", e)
                             }
                         }
+
                         Accelerator.CPU -> {
                             Log.d(TAG, "Using CPU/XNNPACK with $threads threads")
                         }
@@ -105,27 +105,28 @@ class FooDetector(
             try {
                 interpreter = Interpreter(modelBuffer, preferred)
                 // If we made it here, preferred accelerator worked
-                activeAccelerator =
-                        when {
-                            gpuDelegate != null -> Accelerator.GPU
-                            nnApiDelegate != null -> Accelerator.NNAPI
-                            else -> Accelerator.CPU
-                        }
+                activeAccelerator = when {
+                    gpuDelegate != null -> Accelerator.GPU
+                    nnApiDelegate != null -> Accelerator.NNAPI
+                    else -> Accelerator.CPU
+                }
             } catch (e: Throwable) {
                 lastError = e
                 Log.w(
-                        TAG,
-                        "Preferred accelerator failed to initialize interpreter; attempting fallback",
-                        e
+                    TAG,
+                    "Preferred accelerator failed to initialize interpreter; attempting fallback",
+                    e
                 )
                 // Close any delegates created
                 try {
                     gpuDelegate?.close()
-                } catch (_: Throwable) {}
+                } catch (_: Throwable) {
+                }
                 gpuDelegate = null
                 try {
                     nnApiDelegate?.close()
-                } catch (_: Throwable) {}
+                } catch (_: Throwable) {
+                }
                 nnApiDelegate = null
 
                 // 2) Secondary fallback: CPU
@@ -141,18 +142,17 @@ class FooDetector(
 
             if (interpreter == null) {
                 throw (lastError
-                        ?: IllegalStateException("Interpreter is null after initialization"))
+                    ?: IllegalStateException("Interpreter is null after initialization"))
             }
 
             // Final, explicit log about which delegate is in use
             when (activeAccelerator) {
                 Accelerator.GPU -> Log.d(TAG, "Using GPU delegate (TfLiteGpuDelegateV2)")
                 Accelerator.NNAPI -> Log.d(TAG, "Using NNAPI delegate")
-                Accelerator.CPU ->
-                        Log.d(
-                                TAG,
-                                "Using CPU/XNNPACK delegate with ${if (numThreads < 1) 1 else numThreads} threads"
-                        )
+                Accelerator.CPU -> Log.d(
+                    TAG,
+                    "Using CPU/XNNPACK delegate with ${if (numThreads < 1) 1 else numThreads} threads"
+                )
             }
 
             val inputTensor = interpreter!!.getInputTensor(0)
@@ -164,19 +164,15 @@ class FooDetector(
             modelOutputShape = outputTensor.shape()
 
             // Create image processor for YOLO input (normalize to [0,1])
-            imageProcessor =
-                    ImageProcessor.Builder()
-                            .add(
-                                    ResizeOp(
-                                            modelInputShape[1], // height
-                                            modelInputShape[2], // width
-                                            ResizeOp.ResizeMethod.BILINEAR
-                                    )
-                            )
-                            // Match LiteRT preprocessing: normalize to [0,1] and cast to FLOAT32
-                            .add(NormalizeOp(0f, 255f))
-                            .add(CastOp(DataType.FLOAT32))
-                            .build()
+            imageProcessor = ImageProcessor.Builder().add(
+                    ResizeOp(
+                        modelInputShape[1], // height
+                        modelInputShape[2], // width
+                        ResizeOp.ResizeMethod.BILINEAR
+                    )
+                )
+                // Match LiteRT preprocessing: normalize to [0,1] and cast to FLOAT32
+                .add(NormalizeOp(0f, 255f)).add(CastOp(DataType.FLOAT32)).build()
 
             Log.d(TAG, "Model loaded successfully")
             Log.d(TAG, "Input shape: ${modelInputShape.contentToString()}")
@@ -188,7 +184,7 @@ class FooDetector(
                 val warmupInput = TensorBuffer.createFixedSize(modelInputShape, modelInputDataType)
                 // Fill zeros (buffer is zeroed by default for newly allocated direct buffers)
                 val warmupOutput =
-                        TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
+                    TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
                 val tWarmStart = System.nanoTime()
                 interpreter!!.run(warmupInput.buffer, warmupOutput.buffer)
                 val tWarmEnd = System.nanoTime()
@@ -216,8 +212,8 @@ class FooDetector(
             val detectionAreaSide = min(originalWidth, originalHeight).toFloat()
             val detectionArea = DetectionArea(0f, 0f, detectionAreaSide, detectionAreaSide)
             Log.d(
-                    TAG,
-                    "Detection area: ${detectionArea.width}x${detectionArea.height}, startX: ${detectionArea.startX}, startY: ${detectionArea.startY}"
+                TAG,
+                "Detection area: ${detectionArea.width}x${detectionArea.height}, startX: ${detectionArea.startX}, startY: ${detectionArea.startY}"
             )
             // Preprocess image
             val tPreStart = System.nanoTime()
@@ -237,13 +233,11 @@ class FooDetector(
 
             // Parse YOLO output
             val tPostStart = System.nanoTime()
-            val parsed =
-                    parseYoloOutput(
-                            output.floatArray,
-                            detectionArea,
-                            modelInputShape[1], // input height
-                            modelInputShape[2] // input width
-                    )
+            val parsed = parseYoloOutput(
+                output.floatArray, detectionArea
+                // input height
+                // input width
+            )
             val tPostEnd = System.nanoTime()
             val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
 
@@ -251,24 +245,24 @@ class FooDetector(
             val rawDetections = parsed.rawCount
 
             Log.d(
-                    TAG,
-                    "Detected ${boundingBoxes.size} objects above confidence threshold $confThreshold"
+                TAG,
+                "Detected ${boundingBoxes.size} objects above confidence threshold $confThreshold"
             )
 
             val tOverallEnd = System.nanoTime()
             val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
             Log.d(
-                    TAG,
-                    "Timing: preprocess=${preprocessMs}ms, inference=${inferenceMs}ms, postprocess=${postprocessMs}ms, total=${totalMs}ms"
+                TAG,
+                "Timing: preprocess=${preprocessMs}ms, inference=${inferenceMs}ms, postprocess=${postprocessMs}ms, total=${totalMs}ms"
             )
 
             Detection(
-                    boundingBoxes = boundingBoxes,
-                    area = detectionArea,
-                    inferenceMs = inferenceMs,
-                    fps = -1f,
-                    rawDetections = rawDetections,
-                    afterNmsDetections = boundingBoxes.size
+                boundingBoxes = boundingBoxes,
+                area = detectionArea,
+                inferenceMs = inferenceMs,
+                fps = -1f,
+                rawDetections = rawDetections,
+                afterNmsDetections = boundingBoxes.size
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error during detection", e)
@@ -304,30 +298,28 @@ class FooDetector(
 
             // Postprocess (map results back to original space using detectionArea offset)
             val tPostStart = System.nanoTime()
-            val parsed =
-                    parseYoloOutput(
-                            output.floatArray,
-                            detectionArea,
-                            modelInputShape[1], // input height
-                            modelInputShape[2] // input width
-                    )
+            val parsed = parseYoloOutput(
+                output.floatArray, detectionArea
+                // input height
+                // input width
+            )
             val tPostEnd = System.nanoTime()
             val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
 
             val tOverallEnd = System.nanoTime()
             val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
             Log.d(
-                    TAG,
-                    "detectInArea: pre=${preprocessMs}ms, infer=${inferenceMs}ms, post=${postprocessMs}ms, total=${totalMs}ms"
+                TAG,
+                "detectInArea: pre=${preprocessMs}ms, infer=${inferenceMs}ms, post=${postprocessMs}ms, total=${totalMs}ms"
             )
 
             Detection(
-                    boundingBoxes = parsed.boxes,
-                    area = detectionArea,
-                    inferenceMs = inferenceMs,
-                    fps = -1f,
-                    rawDetections = parsed.rawCount,
-                    afterNmsDetections = parsed.boxes.size
+                boundingBoxes = parsed.boxes,
+                area = detectionArea,
+                inferenceMs = inferenceMs,
+                fps = -1f,
+                rawDetections = parsed.rawCount,
+                afterNmsDetections = parsed.boxes.size
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error during detection in area", e)
@@ -336,14 +328,13 @@ class FooDetector(
     }
 
     private fun preprocessImage(image: Bitmap, detectionArea: DetectionArea): TensorImage {
-        val croppedImage =
-                Bitmap.createBitmap(
-                        image,
-                        detectionArea.startX.toInt(),
-                        detectionArea.startY.toInt(),
-                        detectionArea.width.toInt(),
-                        detectionArea.height.toInt()
-                )
+        val croppedImage = Bitmap.createBitmap(
+            image,
+            detectionArea.startX.toInt(),
+            detectionArea.startY.toInt(),
+            detectionArea.width.toInt(),
+            detectionArea.height.toInt()
+        )
 
         val tensorImage = TensorImage(modelInputDataType)
         tensorImage.load(croppedImage)
@@ -356,10 +347,7 @@ class FooDetector(
     private data class ParsedResult(val boxes: List<BoundingBox>, val rawCount: Int)
 
     private fun parseYoloOutput(
-            output: FloatArray,
-            detectionArea: DetectionArea,
-            inputHeight: Int,
-            inputWidth: Int
+        output: FloatArray, detectionArea: DetectionArea
     ): ParsedResult {
         val predictions = mutableListOf<BoundingBox>()
         var rawAboveThreshold = 0
@@ -373,14 +361,13 @@ class FooDetector(
             val numChannel = modelOutputShape[2]
 
             Log.d(
-                    TAG,
-                    "Processing $numElements detections from output array of size ${output.size}"
+                TAG, "Processing $numElements detections from output array of size ${output.size}"
             )
 
             // Log raw tensor values for debugging
             Log.d(
-                    TAG,
-                    "Raw tensor sample: [0]=$output[0], [1]=$output[1], [2]=$output[2], [3]=$output[3], [4]=$output[4]"
+                TAG,
+                "Raw tensor sample: [0]=$output[0], [1]=$output[1], [2]=$output[2], [3]=$output[3], [4]=$output[4]"
             )
 
             for (r in 0 until numElements) {
@@ -398,8 +385,8 @@ class FooDetector(
                         // Debug logging for first few detections
                         if (predictions.size < 5) {
                             Log.d(
-                                    TAG,
-                                    "CORNER Detection $r: conf=$confidence, x1=$x1, y1=$y1, x2=$x2, y2=$y2, cls=$clsId"
+                                TAG,
+                                "CORNER Detection $r: conf=$confidence, x1=$x1, y1=$y1, x2=$x2, y2=$y2, cls=$clsId"
                             )
                         }
 
@@ -421,15 +408,15 @@ class FooDetector(
 
                         if (boxWidth > 0 && boxHeight > 0) {
                             predictions.add(
-                                    BoundingBox(
-                                            startX = pixelX1,
-                                            startY = pixelY1,
-                                            width = boxWidth,
-                                            height = boxHeight,
-                                            confidence = confidence,
-                                            classId = clsId,
-                                            className = if (clsId == 0) "poo" else "unknown"
-                                    )
+                                BoundingBox(
+                                    startX = pixelX1,
+                                    startY = pixelY1,
+                                    width = boxWidth,
+                                    height = boxHeight,
+                                    confidence = confidence,
+                                    classId = clsId,
+                                    className = if (clsId == 0) "poo" else "unknown"
+                                )
                             )
                         }
                     }
@@ -437,21 +424,18 @@ class FooDetector(
             }
 
             Log.d(
-                    TAG,
-                    "Found ${predictions.size} valid predictions above confidence threshold $confThreshold"
+                TAG,
+                "Found ${predictions.size} valid predictions above confidence threshold $confThreshold"
             )
 
-            val finalBoxes =
-                    if (nmsEnabled && predictions.size > 1) {
-                        applyNMS(predictions, iouThreshold)
-                    } else {
-                        if (!nmsEnabled)
-                                Log.d(
-                                        TAG,
-                                        "NMS disabled: showing ${predictions.size} raw predictions"
-                                )
-                        predictions
-                    }
+            val finalBoxes = if (nmsEnabled && predictions.size > 1) {
+                applyNMS(predictions, iouThreshold)
+            } else {
+                if (!nmsEnabled) Log.d(
+                    TAG, "NMS disabled: showing ${predictions.size} raw predictions"
+                )
+                predictions
+            }
 
             return ParsedResult(finalBoxes, rawAboveThreshold)
         } catch (e: Exception) {
@@ -499,22 +483,15 @@ class FooDetector(
         interpreter = null
         try {
             gpuDelegate?.close()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
         gpuDelegate = null
         try {
             nnApiDelegate?.close()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
         nnApiDelegate = null
         Log.d(TAG, "FooDetector closed")
-    }
-
-    /** Returns a short human-readable label of the active delegate for UI display. */
-    fun activeDelegateLabel(): String {
-        return when (activeAccelerator) {
-            Accelerator.GPU -> "GPU"
-            Accelerator.NNAPI -> "NNAPI"
-            Accelerator.CPU -> "CPU/XNNPACK (${if (numThreads < 1) 1 else numThreads}t)"
-        }
     }
 
     /** Update the detector's confidence threshold at runtime. */
