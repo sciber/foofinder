@@ -445,35 +445,70 @@ class CameraPreviewAnalyzer(
                 return try {
                         val tStart = System.nanoTime()
 
-                        val yBuffer = imageProxy.planes[0].buffer // Y
-                        val uBuffer = imageProxy.planes[1].buffer // U
-                        val vBuffer = imageProxy.planes[2].buffer // V
+                        val yPlane = imageProxy.planes[0]
+                        val uPlane = imageProxy.planes[1]
+                        val vPlane = imageProxy.planes[2]
 
-                        val ySize = yBuffer.remaining()
-                        val uSize = uBuffer.remaining()
-                        val vSize = vBuffer.remaining()
+                        val width = imageProxy.width
+                        val height = imageProxy.height
 
-                        val nv21 = ByteArray(ySize + uSize + vSize)
+                        // NV21 format: Y plane followed by interleaved VU
+                        val ySize = width * height
+                        val uvSize = width * height / 2
+                        val nv21 = ByteArray(ySize + uvSize)
 
                         val tCopyStart = System.nanoTime()
-                        // U and V are swapped
-                        yBuffer.get(nv21, 0, ySize)
-                        vBuffer.get(nv21, ySize, vSize)
-                        uBuffer.get(nv21, ySize + vSize, uSize)
+
+                        // Copy Y plane with proper stride handling
+                        val yBuffer = yPlane.buffer
+                        val yRowStride = yPlane.rowStride
+                        val yPixelStride = yPlane.pixelStride
+
+                        if (yPixelStride == 1 && yRowStride == width) {
+                                // Contiguous Y plane - fast path
+                                yBuffer.get(nv21, 0, ySize)
+                        } else {
+                                // Non-contiguous Y plane - copy row by row
+                                var pos = 0
+                                for (row in 0 until height) {
+                                        yBuffer.position(row * yRowStride)
+                                        yBuffer.get(nv21, pos, width)
+                                        pos += width
+                                }
+                        }
+
+                        // Copy UV planes to NV21 format (interleaved VU)
+                        val vBuffer = vPlane.buffer
+                        val uBuffer = uPlane.buffer
+                        val uvRowStride = vPlane.rowStride
+                        val uvPixelStride = vPlane.pixelStride
+                        val uvWidth = width / 2
+                        val uvHeight = height / 2
+
+                        // Interleave V and U into NV21 format
+                        var uvPos = ySize
+                        for (row in 0 until uvHeight) {
+                                for (col in 0 until uvWidth) {
+                                        val uvIndex = row * uvRowStride + col * uvPixelStride
+                                        nv21[uvPos++] = vBuffer.get(uvIndex)
+                                        nv21[uvPos++] = uBuffer.get(uvIndex)
+                                }
+                        }
+
                         val tCopyEnd = System.nanoTime()
 
                         val yuvImage =
                                 YuvImage(
                                         nv21,
                                         ImageFormat.NV21,
-                                        imageProxy.width,
-                                        imageProxy.height,
+                                        width,
+                                        height,
                                         null
                                 )
                         val out = ByteArrayOutputStream()
                         val tJpegStart = System.nanoTime()
                         yuvImage.compressToJpeg(
-                                Rect(0, 0, imageProxy.width, imageProxy.height),
+                                Rect(0, 0, width, height),
                                 100,
                                 out
                         )
@@ -488,7 +523,7 @@ class CameraPreviewAnalyzer(
 
                         Log.d(
                                 TAG,
-                                "Timing(YUV): copy=${((tCopyEnd - tCopyStart) / 1_000_000L)}ms, compress=${((tJpegEnd - tJpegStart) / 1_000_000L)}ms, decode=${((tDecodeEnd - tDecodeStart) / 1_000_000L)}ms, total=${((tEnd - tStart) / 1_000_000L)}ms"
+                                "Timing(YUV): copy=${((tCopyEnd - tCopyStart) / 1_000_000L)}ms, compress=${((tJpegEnd - tJpegStart) / 1_000_000L)}ms, decode=${((tDecodeEnd - tDecodeStart) / 1_000_000L)}ms, total=${((tEnd - tStart) / 1_000_000L)}ms, strides=[Y:${yRowStride}x${yPixelStride}, UV:${uvRowStride}x${uvPixelStride}]"
                         )
 
                         bmp
