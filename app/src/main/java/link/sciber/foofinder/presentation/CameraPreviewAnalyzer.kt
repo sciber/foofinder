@@ -9,6 +9,7 @@ import android.graphics.YuvImage
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.core.graphics.scale
 import link.sciber.foofinder.data.detection.FooDetector
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
@@ -18,7 +19,6 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
-import androidx.core.graphics.scale
 
 class CameraPreviewAnalyzer(
     private val detector: FooDetector, private val onDetectionResult: (Detection) -> Unit
@@ -102,10 +102,10 @@ class CameraPreviewAnalyzer(
 
                 val detection = when (strategy) {
                     ScanStrategy.SCALED_SINGLE -> detector.detect(bitmap).also {
-                            detectionAreaUsed = DetectionArea(
-                                0f, 0f, baseSide.toFloat(), baseSide.toFloat()
-                            )
-                        }
+                        detectionAreaUsed = DetectionArea(
+                            0f, 0f, baseSide.toFloat(), baseSide.toFloat()
+                        )
+                    }
 
                     ScanStrategy.SINGLE_CENTER -> {
                         val tileSize = detector.getModelInputSize().coerceAtMost(baseSide)
@@ -232,8 +232,7 @@ class CameraPreviewAnalyzer(
 
             if (cropWidth <= 0 || cropHeight <= 0) {
                 Log.w(
-                    TAG,
-                    "Tile capture failed due to invalid crop size: ${cropWidth}x${cropHeight}"
+                    TAG, "Tile capture failed due to invalid crop size: ${cropWidth}x${cropHeight}"
                 )
                 callback.onTileCaptured(null)
                 return
@@ -552,22 +551,22 @@ class CameraPreviewAnalyzer(
             0 -> detection.area
             180 -> {
                 val a = detection.area
-                    DetectionArea(
-                        startX = baseW.toFloat() - (a.startX + a.width),
-                        startY = baseH.toFloat() - (a.startY + a.height),
-                        width = a.width,
-                        height = a.height
-                    )
+                DetectionArea(
+                    startX = baseW.toFloat() - (a.startX + a.width),
+                    startY = baseH.toFloat() - (a.startY + a.height),
+                    width = a.width,
+                    height = a.height
+                )
             }
 
             270 -> {
                 val a = detection.area
-                    DetectionArea(
-                        startX = a.startY,
-                        startY = baseH.toFloat() - (a.startX + a.width),
-                        width = a.height,
-                        height = a.width
-                    )
+                DetectionArea(
+                    startX = a.startY,
+                    startY = baseH.toFloat() - (a.startX + a.width),
+                    width = a.height,
+                    height = a.width
+                )
             }
 
             else -> detection.area
