@@ -23,13 +23,12 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
     }
 
     data class UiState(
-            val resolution: Size? = null,
-            val modelId: String = DEFAULT_MODEL_ID,
-            val scanStrategy: CameraPreviewAnalyzer.ScanStrategy =
-                    CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER,
-            val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
-            val maxBoxes: Int = DEFAULT_MAX_BOXES,
-            val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED
+        val resolution: Size? = null,
+        val modelId: String = DEFAULT_MODEL_ID,
+        val scanStrategy: CameraPreviewAnalyzer.ScanStrategy = CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER,
+        val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
+        val maxBoxes: Int = DEFAULT_MAX_BOXES,
+        val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED
     )
 
     private val repository = CameraSettingsRepository(application.userSettingsStore)
@@ -41,13 +40,12 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             repository.settings.collect { settings ->
                 _uiState.value = UiState(
-                        resolution = settings.toResolution(),
-                        modelId = settings.modelId.takeIf { it.isNotBlank() } ?: DEFAULT_MODEL_ID,
-                        scanStrategy = settings.scanStrategy.toScanStrategy(),
-                        confidenceThreshold = settings.toConfidenceThreshold(),
-                        maxBoxes = settings.toMaxBoxes(),
-                        nmsEnabled = settings.toNmsEnabled()
-                )
+                    resolution = settings.toResolution(),
+                    modelId = settings.modelId.takeIf { it.isNotBlank() } ?: DEFAULT_MODEL_ID,
+                    scanStrategy = settings.scanStrategy.toScanStrategy(),
+                    confidenceThreshold = settings.toConfidenceThreshold(),
+                    maxBoxes = settings.toMaxBoxes(),
+                    nmsEnabled = settings.toNmsEnabled())
             }
         }
     }
