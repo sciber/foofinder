@@ -1,19 +1,11 @@
 package link.sciber.foofinder.presentation
 
 import android.Manifest
-import android.content.ContentValues
-import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
 import android.util.Size
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -22,8 +14,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -32,32 +22,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.BottomSheetScaffold
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -71,8 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
@@ -81,18 +53,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import link.sciber.foofinder.R
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.presentation.CameraAnalyzer.TileCaptureResult
+import link.sciber.foofinder.presentation.components.DetectorInfoBar
+import link.sciber.foofinder.presentation.components.DetectorSettingsSheet
+import link.sciber.foofinder.presentation.components.DetectorTopBar
 import link.sciber.foofinder.utils.CameraResolutionUtils
-import java.io.File
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.math.roundToInt
+import link.sciber.foofinder.utils.ImageStorageManager
+import link.sciber.foofinder.utils.SaveOutcome
 
-private const val SNAPSHOT_SUBDIR = "FooFinder"
 private const val TAG = "DetectorScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -167,7 +136,7 @@ fun DetectorScreen() {
 
                 val outcome = try {
                     withContext(Dispatchers.IO) {
-                        saveDetectionTile(context, result)
+                        ImageStorageManager.saveDetectionTile(context, result.bitmap)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to save detection tile", e)
@@ -186,7 +155,7 @@ fun DetectorScreen() {
                         message = summaryMessage, actionLabel = "Open", withDismissAction = true
                     )
                     if (snackbarResult == SnackbarResult.ActionPerformed) {
-                        openImagePreview(context, saveOutcome.uri)
+                        ImageStorageManager.openImagePreview(context, saveOutcome.uri)
                     }
                 }
 
@@ -326,14 +295,14 @@ fun DetectorScreen() {
                         .padding(top = 8.dp)
                         .padding(horizontal = 16.dp)
                         .padding(
-                                bottom = navInsets.calculateBottomPadding() + 16.dp
+                            bottom = navInsets.calculateBottomPadding() + 16.dp
                         ), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 val openLastSaved = lastSavedUri?.let { uri ->
-                    { openImagePreview(context, uri) }
+                    { ImageStorageManager.openImagePreview(context, uri) }
                 }
 
-                InfoBar(
+                DetectorInfoBar(
                     currentDetection = currentDetection,
                     modifier = Modifier
                             .fillMaxWidth()
@@ -344,156 +313,29 @@ fun DetectorScreen() {
                     onOpenLastSaved = openLastSaved
                 )
 
-                SectionTitle("Detection")
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        LabeledSlider(
-                            title = "Confidence Threshold",
-                            value = currentConfidenceThreshold,
-                            onValueChange = { value ->
-                                settingsViewModel.onConfidenceThresholdChanged(
-                                        value
-                                    )
-                            },
-                            valueFormatter = { v ->
-                                (v * 100).toInt().toString()
-                            },
-                            range = 0f..1f
-                        )
-                        LabeledSlider(
-                            title = "Maximum Boxes",
-                            value = currentMaxBoxes.toFloat(),
-                            onValueChange = { value ->
-                                settingsViewModel.onMaxBoxesChanged(
-                                    value.roundToInt()
-                                )
-                            },
-                            valueFormatter = { v ->
-                                v.toInt().toString()
-                            },
-                            range = 1f..100f
-                        )
-                        val strategies = CameraAnalyzer.ScanStrategy.entries
-                        val strategyLabels = strategies.map { entry ->
-                            entry.name.replace('_', ' ').lowercase().replaceFirstChar {
-                                    it.uppercase()
-                                }
-                        }
-                        val selectedStrategyIndex = strategies.indexOf(currentScanStrategy)
-                        LabeledDropdown(
-                            title = "Scanning Strategy",
-                            options = strategyLabels,
-                            selectedIndex = selectedStrategyIndex,
-                            isOptionEnabled = { idx ->
-                                val strategy = strategies.getOrNull(idx)
-                                if (!scanStrategyConstrained) {
-                                    true
-                                } else {
-                                    strategy == CameraAnalyzer.ScanStrategy.SCALED_SINGLE
-                                }
-                            },
-                            onSelectedIndex = { idx ->
-                                if (idx in strategies.indices) {
-                                    val strategy = strategies[idx]
-                                    if (!scanStrategyConstrained || strategy == CameraAnalyzer.ScanStrategy.SCALED_SINGLE) {
-                                        settingsViewModel.onScanStrategyChanged(
-                                                strategy
-                                            )
-                                    }
-                                }
-                            })
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Enable NMS", style = MaterialTheme.typography.bodyMedium
-                            )
-                            Switch(
-                                checked = currentNmsEnabled, onCheckedChange = { enabled ->
-                                    settingsViewModel.onNmsEnabledChanged(
-                                            enabled
-                                        )
-                                })
-                        }
-                    }
-                }
-
-                SectionTitle("Camera")
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        val resLabels = availableResolutions.map { r ->
-                            CameraResolutionUtils.formatResolution(r)
-                        }
-                        val selectedIdx = currentResolution?.let { sel ->
-                            availableResolutions.indexOfFirst { it == sel }.takeIf { it >= 0 }
-                        } ?: -1
-                        LabeledDropdown(
-                            title = "Resolution",
-                            options = resLabels,
-                            selectedIndex = selectedIdx,
-                            onSelectedIndex = { idx ->
-                                if (idx in availableResolutions.indices) {
-                                    settingsViewModel.onResolutionChanged(
-                                            availableResolutions[idx]
-                                        )
-                                }
-                            })
-                    }
-                }
-
-                SectionTitle("Model")
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val selectedModelIndex = modelOptions.indexOfFirst {
-                                it.first == currentModelId
-                            }.takeIf { it >= 0 } ?: 0
-                        LabeledDropdown(
-                            title = "Model",
-                            options = modelOptions.map { it.second },
-                            selectedIndex = selectedModelIndex,
-                            onSelectedIndex = { idx ->
-                                if (idx in modelOptions.indices) {
-                                    settingsViewModel.onModelChanged(
-                                            modelOptions[idx].first
-                                        )
-                                }
-                            })
-                        Text(
-                            "Input size: 640 × 640",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                DetectorSettingsSheet(
+                    currentConfidenceThreshold = currentConfidenceThreshold,
+                    currentMaxBoxes = currentMaxBoxes,
+                    currentNmsEnabled = currentNmsEnabled,
+                    currentScanStrategy = currentScanStrategy,
+                    scanStrategyConstrained = scanStrategyConstrained,
+                    availableResolutions = availableResolutions,
+                    currentResolution = currentResolution,
+                    modelOptions = modelOptions,
+                    currentModelId = currentModelId,
+                    onConfidenceThresholdChanged = settingsViewModel::onConfidenceThresholdChanged,
+                    onMaxBoxesChanged = settingsViewModel::onMaxBoxesChanged,
+                    onNmsEnabledChanged = settingsViewModel::onNmsEnabledChanged,
+                    onScanStrategyChanged = settingsViewModel::onScanStrategyChanged,
+                    onResolutionChanged = settingsViewModel::onResolutionChanged,
+                    onModelChanged = settingsViewModel::onModelChanged
+                )
             }
         }) { paddingValues ->
         Column(modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)) {
-            TopBar(
+            DetectorTopBar(
                 isTorchEnabled = isTorchEnabled,
                 isTorchAvailable = isTorchAvailable,
                 onToggleTorch = toggleTorch
@@ -539,291 +381,3 @@ fun DetectorScreen() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TopBar(
-    isTorchEnabled: Boolean, isTorchAvailable: Boolean, onToggleTorch: () -> Unit
-) {
-    TopAppBar(
-        title = { Text("Detector", fontWeight = FontWeight.SemiBold) }, actions = {
-        val iconRes = if (isTorchEnabled) R.drawable.flashlight_on_24
-        else R.drawable.flashlight_off_24
-        val contentDescription = if (isTorchEnabled) "Flashlight On" else "Flashlight Off"
-        IconButton(onClick = onToggleTorch, enabled = isTorchAvailable) {
-            Icon(
-                painter = painterResource(id = iconRes), contentDescription = contentDescription
-            )
-        }
-        IconButton(onClick = { /* TODO: grid */ }) {
-            Icon(
-                painter = painterResource(id = R.drawable.dataset_24),
-                contentDescription = "Dataset"
-            )
-        }
-    }, colors = TopAppBarDefaults.topAppBarColors(
-        containerColor = MaterialTheme.colorScheme.background
-    )
-    )
-}
-
-@Composable
-private fun SectionTitle(title: String) {
-    Text(
-        title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)
-    )
-}
-
-@Composable
-private fun LabeledSlider(
-    title: String,
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    valueFormatter: (Float) -> String,
-    range: ClosedFloatingPointRange<Float>
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("$title:", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                valueFormatter(value),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        Slider(value = value, onValueChange = onValueChange, valueRange = range)
-    }
-}
-
-@Composable
-private fun LabeledDropdown(
-    title: String,
-    options: List<String>,
-    selectedIndex: Int,
-    isOptionEnabled: (Int) -> Boolean = { true },
-    onSelectedIndex: (Int) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text("$title:", style = MaterialTheme.typography.bodyMedium)
-        var expanded by remember { mutableStateOf(false) }
-        val selectedText = options.getOrNull(selectedIndex) ?: "Select"
-        OutlinedTextField(
-            value = selectedText,
-            onValueChange = {},
-            modifier = Modifier.fillMaxWidth(),
-            readOnly = true,
-            trailingIcon = {
-                IconButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        Icons.Default.ArrowDropDown, contentDescription = null
-                    )
-                }
-            })
-        androidx.compose.material3.DropdownMenu(
-            expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEachIndexed { idx, label ->
-                val enabled = isOptionEnabled(idx)
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(label) },
-                    enabled = enabled,
-                    onClick = {
-                        if (!enabled) return@DropdownMenuItem
-                        expanded = false
-                        onSelectedIndex(idx)
-                    })
-            }
-        }
-    }
-}
-
-@Composable
-private fun InfoBar(
-    currentDetection: Detection?,
-    modifier: Modifier = Modifier,
-    onSnapshotClick: (() -> Unit)? = null,
-    isSaving: Boolean = false,
-    lastSavedMessage: String? = null,
-    onOpenLastSaved: (() -> Unit)? = null
-) {
-    Card(
-        modifier = modifier.padding(vertical = 8.dp), colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-        )
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                val fpsText = currentDetection?.let {
-                    if (it.fps >= 0f) String.format(
-                        "%.1f", it.fps
-                    )
-                    else "-"
-                } ?: "-"
-                val infText = currentDetection?.let {
-                    if (it.inferenceMs >= 0) "${it.inferenceMs} ms"
-                    else "-"
-                } ?: "-"
-                val objectsText = currentDetection?.afterNmsDetections ?: 0
-                val tileText = "640 × 640" // placeholder
-                val delegateText = "CPU/XNNPACK(4t)" // placeholder until wired from detector
-
-                Text(
-                    buildString {
-                        append("Object(s): ")
-                        append(objectsText)
-                    },
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "FPS: $fpsText",
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Inference: $infText",
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Tile: $tileText",
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Delegate: $delegateText",
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            if (onSnapshotClick != null) {
-                FloatingActionButton(
-                    onClick = onSnapshotClick,
-                    modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(12.dp),
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-                    if (isSaving) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(id = R.drawable.camera_24),
-                            contentDescription = "Save analyzed image"
-                        )
-                    }
-                }
-            }
-        }
-
-        if (!lastSavedMessage.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = lastSavedMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-                if (onOpenLastSaved != null) {
-                    TextButton(onClick = onOpenLastSaved) {
-                        Text(
-                            "Open", style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-private data class SaveOutcome(
-    val uri: Uri, val displayName: String, val locationDescription: String
-)
-
-private fun saveDetectionTile(context: Context, result: TileCaptureResult): SaveOutcome {
-    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-    val displayName = "FooFinder_$timestamp.jpg"
-    val relativePath = "${Environment.DIRECTORY_PICTURES}/$SNAPSHOT_SUBDIR"
-    val resolver = context.contentResolver
-
-    val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
-            put(MediaStore.Images.Media.IS_PENDING, 1)
-        } else {
-            val picturesDir = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_PICTURES
-            )
-            val targetDir = File(picturesDir, SNAPSHOT_SUBDIR)
-            if (!targetDir.exists() && !targetDir.mkdirs()) {
-                throw IOException("Unable to create directory: ${targetDir.absolutePath}")
-            }
-            val legacyPath = File(targetDir, displayName).absolutePath
-            put(MediaStore.Images.Media.DATA, legacyPath)
-        }
-    }
-
-    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        ?: throw IOException("Failed to create MediaStore entry")
-
-    try {
-        resolver.openOutputStream(uri)?.use { output ->
-            if (!result.bitmap.compress(
-                    Bitmap.CompressFormat.JPEG, 95, output
-                )
-            ) {
-                throw IOException("Failed to compress bitmap")
-            }
-        } ?: throw IOException("Failed to open image output stream")
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ContentValues().apply {
-                put(MediaStore.Images.Media.IS_PENDING, 0)
-            }.also { resolver.update(uri, it, null, null) }
-        } else {
-            val legacyPath = values.getAsString(MediaStore.Images.Media.DATA)
-            MediaScannerConnection.scanFile(
-                context, arrayOf(legacyPath), arrayOf("image/jpeg"), null
-            )
-        }
-
-        return SaveOutcome(
-            uri = uri, displayName = displayName, locationDescription = relativePath
-        )
-    } catch (e: Exception) {
-        resolver.delete(uri, null, null)
-        throw e
-    }
-}
-
-private fun openImagePreview(context: Context, uri: Uri) {
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, "image/*")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    if (intent.resolveActivity(context.packageManager) != null) {
-        context.startActivity(intent)
-    } else {
-        Toast.makeText(
-            context, "No app found to open saved image", Toast.LENGTH_SHORT
-        ).show()
-    }
-}
