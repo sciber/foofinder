@@ -20,7 +20,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
-class CameraPreviewAnalyzer(
+class CameraAnalyzer(
     private val detector: FooDetector, private val onDetectionResult: (Detection) -> Unit
 ) : ImageAnalysis.Analyzer {
 
@@ -47,7 +47,7 @@ class CameraPreviewAnalyzer(
     private var strategy = ScanStrategy.RANDOM
 
     companion object {
-        private const val TAG = "CameraPreviewAnalyzer"
+        private const val TAG = "CameraAnalyzer"
     }
 
     // Rolling FPS window

@@ -16,7 +16,6 @@ import android.widget.Toast
 import android.content.pm.PackageManager
 import androidx.camera.core.Camera
 import androidx.camera.core.TorchState
-import androidx.camera.view.LifecycleCameraController
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,12 +75,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.net.toUri
 import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -92,9 +89,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import link.sciber.foofinder.R
 import link.sciber.foofinder.domain.Detection
-import link.sciber.foofinder.presentation.CameraPreviewAnalyzer
-import link.sciber.foofinder.presentation.CameraPreviewAnalyzer.TileCaptureResult
-import link.sciber.foofinder.presentation.TileCaptureRequester
+import link.sciber.foofinder.presentation.CameraAnalyzer.TileCaptureResult
 import link.sciber.foofinder.utils.CameraResolutionUtils
 
 private const val SNAPSHOT_SUBDIR = "FooFinder"
@@ -104,7 +99,6 @@ private const val TAG = "CameraScreen"
 @Composable
 fun CameraScreen() {
         val context = LocalContext.current
-        val controller = remember { LifecycleCameraController(context) }
 
         var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
         var currentCamera by remember { mutableStateOf<Camera?>(null) }
@@ -393,7 +387,7 @@ fun CameraScreen() {
                                                         range = 1f..100f
                                                 )
                                                 val strategies =
-                                                        CameraPreviewAnalyzer.ScanStrategy.entries
+                                                        CameraAnalyzer.ScanStrategy.entries
                                                 val strategyLabels =
                                                         strategies.map { entry ->
                                                                 entry.name
@@ -416,7 +410,7 @@ fun CameraScreen() {
                                                                         true
                                                                 } else {
                                                                         strategy ==
-                                                                                CameraPreviewAnalyzer
+                                                                                CameraAnalyzer
                                                                                         .ScanStrategy
                                                                                         .SCALED_SINGLE
                                                                 }
@@ -427,7 +421,7 @@ fun CameraScreen() {
                                                                                 strategies[idx]
                                                                         if (!scanStrategyConstrained ||
                                                                                 strategy ==
-                                                                                CameraPreviewAnalyzer
+                                                                                CameraAnalyzer
                                                                                         .ScanStrategy
                                                                                         .SCALED_SINGLE
                                                                         ) {
@@ -939,7 +933,7 @@ private fun saveDetectionTile(context: Context, result: TileCaptureResult): Save
                 return SaveOutcome(
                         uri = uri,
                         displayName = displayName,
-                        locationDescription = "$relativePath"
+                        locationDescription = relativePath
                 )
         } catch (e: Exception) {
                 resolver.delete(uri, null, null)

@@ -5,7 +5,7 @@ import androidx.datastore.core.DataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import link.sciber.foofinder.datastore.UserSettings
-import link.sciber.foofinder.presentation.CameraPreviewAnalyzer
+import link.sciber.foofinder.presentation.CameraAnalyzer
 import java.io.IOException
 
 class CameraSettingsRepository(
@@ -40,7 +40,7 @@ class CameraSettingsRepository(
         }
     }
 
-    suspend fun setScanStrategy(strategy: CameraPreviewAnalyzer.ScanStrategy) {
+    suspend fun setScanStrategy(strategy: CameraAnalyzer.ScanStrategy) {
         dataStore.updateData { current ->
             current.toBuilder().setScanStrategy(strategy.name).build()
         }

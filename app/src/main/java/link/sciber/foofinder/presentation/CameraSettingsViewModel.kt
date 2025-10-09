@@ -25,7 +25,7 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
     data class UiState(
         val resolution: Size? = null,
         val modelId: String = DEFAULT_MODEL_ID,
-        val scanStrategy: CameraPreviewAnalyzer.ScanStrategy = CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER,
+        val scanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.SINGLE_CENTER,
         val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
         val maxBoxes: Int = DEFAULT_MAX_BOXES,
         val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED
@@ -59,7 +59,7 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch { repository.setModelId(modelId) }
     }
 
-    fun onScanStrategyChanged(strategy: CameraPreviewAnalyzer.ScanStrategy) {
+    fun onScanStrategyChanged(strategy: CameraAnalyzer.ScanStrategy) {
         viewModelScope.launch { repository.setScanStrategy(strategy) }
     }
 
@@ -88,12 +88,12 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    private fun String.toScanStrategy(): CameraPreviewAnalyzer.ScanStrategy {
+    private fun String.toScanStrategy(): CameraAnalyzer.ScanStrategy {
         return try {
-            if (isBlank()) CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER
-            else CameraPreviewAnalyzer.ScanStrategy.valueOf(this)
+            if (isBlank()) CameraAnalyzer.ScanStrategy.SINGLE_CENTER
+            else CameraAnalyzer.ScanStrategy.valueOf(this)
         } catch (_: IllegalArgumentException) {
-            CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER
+            CameraAnalyzer.ScanStrategy.SINGLE_CENTER
         }
     }
 

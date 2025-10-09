@@ -38,7 +38,7 @@ import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
 
-typealias TileCaptureRequester = (CameraPreviewAnalyzer.TileCaptureCallback) -> Boolean
+typealias TileCaptureRequester = (CameraAnalyzer.TileCaptureCallback) -> Boolean
 
 @Composable
 fun CameraPreview(
@@ -50,10 +50,10 @@ fun CameraPreview(
     currentMaxBoxes: Int,
     currentNmsEnabled: Boolean,
     modifier: Modifier = Modifier,
-    currentScanStrategy: CameraPreviewAnalyzer.ScanStrategy = CameraPreviewAnalyzer.ScanStrategy.SINGLE_CENTER,
+    currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.SINGLE_CENTER,
     modelId: String = "models/best_plain_float16.tflite",
     onCameraReady: (Camera?) -> Unit = {},
-    onScanStrategyAutoChange: (CameraPreviewAnalyzer.ScanStrategy) -> Unit = {},
+    onScanStrategyAutoChange: (CameraAnalyzer.ScanStrategy) -> Unit = {},
     onScanStrategyConstraintChange: (Boolean) -> Unit = {},
     onTileCaptureRequesterChange: (TileCaptureRequester?) -> Unit = {}
 ) {
@@ -62,11 +62,11 @@ fun CameraPreview(
 
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
     var detector by remember { mutableStateOf<FooDetector?>(null) }
-    var analyzer by remember { mutableStateOf<CameraPreviewAnalyzer?>(null) }
+    var analyzer by remember { mutableStateOf<CameraAnalyzer?>(null) }
 
     LaunchedEffect(analyzer) {
         val requester: TileCaptureRequester? = analyzer?.let { instance ->
-            { callback: CameraPreviewAnalyzer.TileCaptureCallback ->
+            { callback: CameraAnalyzer.TileCaptureCallback ->
                 instance.requestTileCapture(callback)
             }
         }
@@ -80,22 +80,22 @@ fun CameraPreview(
     }
 
     fun resolveStrategy(
-        requested: CameraPreviewAnalyzer.ScanStrategy,
+        requested: CameraAnalyzer.ScanStrategy,
         det: FooDetector?,
         resolution: Size?,
         notify: Boolean
-    ): CameraPreviewAnalyzer.ScanStrategy {
+    ): CameraAnalyzer.ScanStrategy {
         val needsScaledSingle = requiresScaledSingle(det, resolution)
         if (notify) {
             onScanStrategyConstraintChange(needsScaledSingle)
         }
-        return if (needsScaledSingle && requested != CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE) {
+        return if (needsScaledSingle && requested != CameraAnalyzer.ScanStrategy.SCALED_SINGLE) {
             if (notify) {
                 onScanStrategyAutoChange(
-                    CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
+                    CameraAnalyzer.ScanStrategy.SCALED_SINGLE
                 )
             }
-            CameraPreviewAnalyzer.ScanStrategy.SCALED_SINGLE
+            CameraAnalyzer.ScanStrategy.SCALED_SINGLE
         } else {
             requested
         }
@@ -140,7 +140,7 @@ fun CameraPreview(
 
                             val imageAnalysisUseCase = imageAnalysisBuilder.build()
 
-                            val createdAnalyzer = CameraPreviewAnalyzer(
+                            val createdAnalyzer = CameraAnalyzer(
                                 det, onDetectionResult
                             ).also {
                                     it.setScanStrategy(
