@@ -12,7 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import link.sciber.foofinder.presentation.CameraScreen
+import link.sciber.foofinder.presentation.DetectorScreen
 import link.sciber.foofinder.ui.theme.FooFinderTheme
 
 class MainActivity : ComponentActivity() {
@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
                 Surface(
                     modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
                 ) {
-                    CameraScreen()
+                    DetectorScreen()
                 }
             }
         }
