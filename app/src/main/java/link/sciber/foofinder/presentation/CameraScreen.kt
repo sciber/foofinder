@@ -586,7 +586,6 @@ fun CameraScreen() {
                                                 .aspectRatio(1f)
                         ) {
                                 CameraPreview(
-                                        controller = controller,
                                         currentResolution = currentResolution,
                                         onResolutionChange = { resolution ->
                                                 settingsViewModel.onResolutionChanged(resolution)
@@ -598,9 +597,9 @@ fun CameraScreen() {
                                         currentConfidenceThreshold = currentConfidenceThreshold,
                                         currentMaxBoxes = currentMaxBoxes,
                                         currentNmsEnabled = currentNmsEnabled,
+                                        modifier = Modifier.fillMaxSize(),
                                         currentScanStrategy = currentScanStrategy,
                                         modelId = currentModelId,
-                                        modifier = Modifier.fillMaxSize(),
                                         onCameraReady = { camera -> currentCamera = camera },
                                         onScanStrategyAutoChange = { enforced ->
                                                 if (enforced != currentScanStrategy) {
