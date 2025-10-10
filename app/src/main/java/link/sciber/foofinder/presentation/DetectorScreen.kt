@@ -2,7 +2,6 @@ package link.sciber.foofinder.presentation
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.util.Size
@@ -106,8 +105,6 @@ fun DetectorScreen() {
             ) == PackageManager.PERMISSION_GRANTED
         )
     }
-    var lastSavedMessage by remember { mutableStateOf<String?>(null) }
-    var lastSavedUri by remember { mutableStateOf<Uri?>(null) }
 
     val writePermission = Manifest.permission.WRITE_EXTERNAL_STORAGE
 
@@ -150,10 +147,8 @@ fun DetectorScreen() {
                 }
 
                 outcome?.let { saveOutcome ->
-                    lastSavedUri = saveOutcome.uri
                     val summaryMessage =
                         "Saved ${saveOutcome.displayName} to ${saveOutcome.locationDescription}"
-                    lastSavedMessage = summaryMessage
                     val snackbarResult = snackbarHostState.showSnackbar(
                         message = summaryMessage, actionLabel = "Open", withDismissAction = true
                     )
@@ -295,15 +290,8 @@ fun DetectorScreen() {
                             top = 16.dp, bottom = navInsets.calculateBottomPadding() + 16.dp
                         ), verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    val openLastSaved = lastSavedUri?.let { uri ->
-                        { ImageStorageManager.openImagePreview(context, uri) }
-                    }
-
                     DetectorInfoBar(
-                        currentDetection = currentDetection,
-                        modifier = Modifier.fillMaxWidth(),
-                        lastSavedMessage = lastSavedMessage,
-                        onOpenLastSaved = openLastSaved
+                        currentDetection = currentDetection, modifier = Modifier.fillMaxWidth()
                     )
 
                     DetectorSettingsSheet(

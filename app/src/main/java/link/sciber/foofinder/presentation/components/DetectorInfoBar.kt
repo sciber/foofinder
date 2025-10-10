@@ -1,32 +1,24 @@
 package link.sciber.foofinder.presentation.components
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import link.sciber.foofinder.domain.Detection
 
 /**
- * Info bar displaying detection statistics and last saved image information
+ * Info bar displaying detection statistics
  */
 @Composable
 fun DetectorInfoBar(
-    currentDetection: Detection?,
-    modifier: Modifier = Modifier,
-    lastSavedMessage: String? = null,
-    onOpenLastSaved: (() -> Unit)? = null
+    currentDetection: Detection?, modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier.padding(vertical = 8.dp), colors = CardDefaults.cardColors(
@@ -81,31 +73,6 @@ fun DetectorInfoBar(
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                 style = MaterialTheme.typography.bodyMedium
             )
-        }
-
-
-        if (!lastSavedMessage.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = lastSavedMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-                if (onOpenLastSaved != null) {
-                    TextButton(onClick = onOpenLastSaved) {
-                        Text(
-                            text = "Open", style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
-            }
         }
     }
 }
