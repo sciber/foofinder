@@ -25,42 +25,37 @@ fun DetectorTopBar(
 ) {
     TopAppBar(
         title = {
-            Text(
-                text = "Detector",
-                fontWeight = FontWeight.SemiBold
-            )
-        },
-        actions = {
-            val iconRes = if (isTorchEnabled) {
-                R.drawable.flashlight_on_24
-            } else {
-                R.drawable.flashlight_off_24
-            }
-            val contentDescription = if (isTorchEnabled) {
-                "Flashlight On"
-            } else {
-                "Flashlight Off"
-            }
-            
-            IconButton(
-                onClick = onToggleTorch,
-                enabled = isTorchAvailable
-            ) {
-                Icon(
-                    painter = painterResource(id = iconRes),
-                    contentDescription = contentDescription
-                )
-            }
-            
-            IconButton(onClick = onDatasetClick) {
-                Icon(
-                    painter = painterResource(id = R.drawable.dataset_24),
-                    contentDescription = "Dataset"
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background
+        Text(
+            text = "Detector", fontWeight = FontWeight.SemiBold
         )
+    }, actions = {
+        val iconRes = if (isTorchEnabled) {
+            R.drawable.flashlight_on_24
+        } else {
+            R.drawable.flashlight_off_24
+        }
+        val contentDescription = if (isTorchEnabled) {
+            "Flashlight On"
+        } else {
+            "Flashlight Off"
+        }
+
+        IconButton(
+            onClick = onToggleTorch, enabled = isTorchAvailable
+        ) {
+            Icon(
+                painter = painterResource(id = iconRes), contentDescription = contentDescription
+            )
+        }
+
+        IconButton(onClick = onDatasetClick) {
+            Icon(
+                painter = painterResource(id = R.drawable.dataset_24),
+                contentDescription = "Dataset"
+            )
+        }
+    }, colors = TopAppBarDefaults.topAppBarColors(
+        containerColor = MaterialTheme.colorScheme.background
+    )
     )
 }

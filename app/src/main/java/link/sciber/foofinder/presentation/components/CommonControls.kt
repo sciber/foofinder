@@ -18,7 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 
 /**
  * Reusable section title component for settings categories
@@ -46,8 +45,7 @@ fun LabeledSlider(
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("$title:", style = MaterialTheme.typography.bodyMedium)
             Text(
@@ -57,9 +55,7 @@ fun LabeledSlider(
             )
         }
         Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range
+            value = value, onValueChange = onValueChange, valueRange = range
         )
     }
 }
@@ -80,7 +76,7 @@ fun LabeledDropdown(
         Text("$title:", style = MaterialTheme.typography.bodyMedium)
         var expanded by remember { mutableStateOf(false) }
         val selectedText = options.getOrNull(selectedIndex) ?: "Select"
-        
+
         OutlinedTextField(
             value = selectedText,
             onValueChange = {},
@@ -89,17 +85,13 @@ fun LabeledDropdown(
             trailingIcon = {
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null
+                        imageVector = Icons.Default.ArrowDropDown, contentDescription = null
                     )
                 }
-            }
-        )
-        
+            })
+
         androidx.compose.material3.DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
+            expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEachIndexed { idx, label ->
                 val enabled = isOptionEnabled(idx)
                 androidx.compose.material3.DropdownMenuItem(
@@ -109,8 +101,7 @@ fun LabeledDropdown(
                         if (!enabled) return@DropdownMenuItem
                         expanded = false
                         onSelectedIndex(idx)
-                    }
-                )
+                    })
             }
         }
     }

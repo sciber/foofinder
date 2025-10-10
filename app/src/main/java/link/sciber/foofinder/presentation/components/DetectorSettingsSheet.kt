@@ -42,8 +42,7 @@ fun DetectorSettingsSheet(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Detection Settings
         SectionTitle("Detection")
@@ -63,7 +62,7 @@ fun DetectorSettingsSheet(
                     valueFormatter = { v -> (v * 100).toInt().toString() },
                     range = 0f..1f
                 )
-                
+
                 LabeledSlider(
                     title = "Maximum Boxes",
                     value = currentMaxBoxes.toFloat(),
@@ -71,7 +70,7 @@ fun DetectorSettingsSheet(
                     valueFormatter = { v -> v.toInt().toString() },
                     range = 1f..100f
                 )
-                
+
                 val strategies = CameraAnalyzer.ScanStrategy.entries
                 val strategyLabels = strategies.map { entry ->
                     entry.name.replace('_', ' ').lowercase().replaceFirstChar {
@@ -79,7 +78,7 @@ fun DetectorSettingsSheet(
                     }
                 }
                 val selectedStrategyIndex = strategies.indexOf(currentScanStrategy)
-                
+
                 LabeledDropdown(
                     title = "Scanning Strategy",
                     options = strategyLabels,
@@ -99,21 +98,18 @@ fun DetectorSettingsSheet(
                                 onScanStrategyChanged(strategy)
                             }
                         }
-                    }
-                )
-                
+                    })
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Enable NMS",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = "Enable NMS", style = MaterialTheme.typography.bodyMedium
                     )
                     Switch(
-                        checked = currentNmsEnabled,
-                        onCheckedChange = onNmsEnabledChanged
+                        checked = currentNmsEnabled, onCheckedChange = onNmsEnabledChanged
                     )
                 }
             }
@@ -136,7 +132,7 @@ fun DetectorSettingsSheet(
                 val selectedIdx = currentResolution?.let { sel ->
                     availableResolutions.indexOfFirst { it == sel }.takeIf { it >= 0 }
                 } ?: -1
-                
+
                 LabeledDropdown(
                     title = "Resolution",
                     options = resLabels,
@@ -145,8 +141,7 @@ fun DetectorSettingsSheet(
                         if (idx in availableResolutions.indices) {
                             onResolutionChanged(availableResolutions[idx])
                         }
-                    }
-                )
+                    })
             }
         }
 
@@ -158,13 +153,12 @@ fun DetectorSettingsSheet(
             )
         ) {
             Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 val selectedModelIndex = modelOptions.indexOfFirst {
                     it.first == currentModelId
                 }.takeIf { it >= 0 } ?: 0
-                
+
                 LabeledDropdown(
                     title = "Model",
                     options = modelOptions.map { it.second },
@@ -173,9 +167,8 @@ fun DetectorSettingsSheet(
                         if (idx in modelOptions.indices) {
                             onModelChanged(modelOptions[idx].first)
                         }
-                    }
-                )
-                
+                    })
+
                 Text(
                     text = "Input size: 640 × 640",
                     style = MaterialTheme.typography.bodySmall,

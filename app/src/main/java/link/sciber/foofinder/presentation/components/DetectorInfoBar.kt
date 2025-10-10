@@ -29,8 +29,7 @@ fun DetectorInfoBar(
     onOpenLastSaved: (() -> Unit)? = null
 ) {
     Card(
-        modifier = modifier.padding(vertical = 8.dp),
-        colors = CardDefaults.cardColors(
+        modifier = modifier.padding(vertical = 8.dp), colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer
         )
@@ -40,12 +39,12 @@ fun DetectorInfoBar(
                 if (it.fps >= 0f) String.format("%.1f", it.fps)
                 else "-"
             } ?: "-"
-            
+
             val infText = currentDetection?.let {
                 if (it.inferenceMs >= 0) "${it.inferenceMs} ms"
                 else "-"
             } ?: "-"
-            
+
             val objectsText = currentDetection?.afterNmsDetections ?: 0
             val tileText = "640 × 640" // placeholder
             val delegateText = "CPU/XNNPACK(4t)" // placeholder until wired from detector
@@ -102,8 +101,7 @@ fun DetectorInfoBar(
                 if (onOpenLastSaved != null) {
                     TextButton(onClick = onOpenLastSaved) {
                         Text(
-                            text = "Open",
-                            style = MaterialTheme.typography.labelLarge
+                            text = "Open", style = MaterialTheme.typography.labelLarge
                         )
                     }
                 }
