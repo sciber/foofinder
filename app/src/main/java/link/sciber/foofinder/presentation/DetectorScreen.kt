@@ -34,7 +34,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -68,7 +67,9 @@ private const val TAG = "DetectorScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetectorScreen() {
+fun DetectorScreen(
+    onNavigateToImageViewer: (imageUri: String, fileName: String) -> Unit = { _, _ -> }
+) {
     val context = LocalContext.current
 
     var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
@@ -148,14 +149,10 @@ fun DetectorScreen() {
                 }
 
                 outcome?.let { saveOutcome ->
-                    val summaryMessage =
-                        "Saved ${saveOutcome.displayName} to ${saveOutcome.locationDescription}"
-                    val snackbarResult = snackbarHostState.showSnackbar(
-                        message = summaryMessage, actionLabel = "Open", withDismissAction = true
+                    // Navigate to image viewer screen
+                    onNavigateToImageViewer(
+                        saveOutcome.uri.toString(), saveOutcome.displayName
                     )
-                    if (snackbarResult == SnackbarResult.ActionPerformed) {
-                        ImageStorageManager.openImagePreview(context, saveOutcome.uri)
-                    }
                 }
 
                 isSaving = false

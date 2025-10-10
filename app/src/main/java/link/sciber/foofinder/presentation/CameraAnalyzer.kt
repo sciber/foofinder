@@ -94,24 +94,41 @@ class CameraAnalyzer(
             if (bitmap != null) {
                 val detectStart = System.nanoTime()
                 val baseSide = min(bitmap.width, bitmap.height)
-                val modelInputSize = detector.getModelInputSize().coerceAtLeast(1)
+                val modelInputSize = try {
+                    detector.getModelInputSize().coerceAtLeast(1)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to get model input size, detector may be closed", e)
+                    onDetectionResult(emptyDetectionResult())
+                    bitmap.recycle()
+                    return
+                }
                 var detectionAreaUsed: DetectionArea? = null
 
-                val detection = when (strategy) {
-                    ScanStrategy.SCALED -> detector.detect(bitmap).also {
-                        detectionAreaUsed = DetectionArea(
-                            0f, 0f, baseSide.toFloat(), baseSide.toFloat()
-                        )
-                    }
+                val detection = try {
+                    when (strategy) {
+                        ScanStrategy.SCALED -> detector.detect(bitmap).also {
+                            detectionAreaUsed = DetectionArea(
+                                0f, 0f, baseSide.toFloat(), baseSide.toFloat()
+                            )
+                        }
 
-                    ScanStrategy.CENTERED -> {
-                        val tileSize = detector.getModelInputSize().coerceAtMost(baseSide)
-                        val area = computeCenterTileArea(
-                            baseStartX = 0, baseStartY = 0, baseSide = baseSide, tileSize = tileSize
-                        )
+                        ScanStrategy.CENTERED -> {
+                            val tileSize = detector.getModelInputSize().coerceAtMost(baseSide)
+                            val area = computeCenterTileArea(
+                                baseStartX = 0,
+                                baseStartY = 0,
+                                baseSide = baseSide,
+                                tileSize = tileSize
+                            )
 
-                        detector.detectInArea(bitmap, area).also { detectionAreaUsed = area }
+                            detector.detectInArea(bitmap, area).also { detectionAreaUsed = area }
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Detection failed, detector may be closed", e)
+                    onDetectionResult(emptyDetectionResult())
+                    bitmap.recycle()
+                    return
                 }
 
                 val detectMs = (System.nanoTime() - detectStart) / 1_000_000L

@@ -41,6 +41,10 @@ class FooDetector(
     private var activeAccelerator: Accelerator = Accelerator.CPU
     private var nmsEnabled: Boolean = true
 
+    @Volatile
+    private var isClosed: Boolean = false
+    private val interpreterLock = Any()
+
     // Model input/output details
     private var modelInputDataType: DataType
     private var modelInputShape: IntArray
@@ -165,12 +169,12 @@ class FooDetector(
 
             // Create image processor for YOLO input (normalize to [0,1])
             imageProcessor = ImageProcessor.Builder().add(
-                    ResizeOp(
-                        modelInputShape[1], // height
-                        modelInputShape[2], // width
-                        ResizeOp.ResizeMethod.BILINEAR
-                    )
+                ResizeOp(
+                    modelInputShape[1], // height
+                    modelInputShape[2], // width
+                    ResizeOp.ResizeMethod.BILINEAR
                 )
+            )
                 // Match LiteRT preprocessing: normalize to [0,1] and cast to FLOAT32
                 .add(NormalizeOp(0f, 255f)).add(CastOp(DataType.FLOAT32)).build()
 
@@ -199,74 +203,82 @@ class FooDetector(
     }
 
     override fun detect(image: Bitmap): Detection {
-        return try {
-            val originalWidth = image.width
-            val originalHeight = image.height
+        return synchronized(interpreterLock) {
+            // Check if closed while holding lock
+            val currentInterpreter = interpreter
+            if (isClosed || currentInterpreter == null) {
+                Log.w(TAG, "detect() called on closed detector, returning empty result")
+                return Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
+            }
+            try {
+                val originalWidth = image.width
+                val originalHeight = image.height
 
-            Log.d(TAG, "Processing image: ${originalWidth}x${originalHeight}")
+                Log.d(TAG, "Processing image: ${originalWidth}x${originalHeight}")
 
-            // Overall timer
-            val tOverallStart = System.nanoTime()
+                // Overall timer
+                val tOverallStart = System.nanoTime()
 
-            // Detection area is a square from the top the image
-            val detectionAreaSide = min(originalWidth, originalHeight).toFloat()
-            val detectionArea = DetectionArea(0f, 0f, detectionAreaSide, detectionAreaSide)
-            Log.d(
-                TAG,
-                "Detection area: ${detectionArea.width}x${detectionArea.height}, startX: ${detectionArea.startX}, startY: ${detectionArea.startY}"
-            )
-            // Preprocess image
-            val tPreStart = System.nanoTime()
-            val input = preprocessImage(image, detectionArea)
-            val tPreEnd = System.nanoTime()
-            val preprocessMs = ((tPreEnd - tPreStart) / 1_000_000L)
+                // Detection area is a square from the top the image
+                val detectionAreaSide = min(originalWidth, originalHeight).toFloat()
+                val detectionArea = DetectionArea(0f, 0f, detectionAreaSide, detectionAreaSide)
+                Log.d(
+                    TAG,
+                    "Detection area: ${detectionArea.width}x${detectionArea.height}, startX: ${detectionArea.startX}, startY: ${detectionArea.startY}"
+                )
+                // Preprocess image
+                val tPreStart = System.nanoTime()
+                val input = preprocessImage(image, detectionArea)
+                val tPreEnd = System.nanoTime()
+                val preprocessMs = ((tPreEnd - tPreStart) / 1_000_000L)
 
-            val output = TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
+                val output = TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
 
-            Log.d(TAG, "Processed image: ${modelInputShape[1]}x${modelInputShape[2]}")
+                Log.d(TAG, "Processed image: ${modelInputShape[1]}x${modelInputShape[2]}")
 
-            // Run inference with timing
-            val t0 = System.nanoTime()
-            interpreter!!.run(input.buffer, output.buffer)
-            val t1 = System.nanoTime()
-            val inferenceMs = ((t1 - t0) / 1_000_000L)
+                // Run inference with timing
+                val t0 = System.nanoTime()
+                currentInterpreter.run(input.buffer, output.buffer)
+                val t1 = System.nanoTime()
+                val inferenceMs = ((t1 - t0) / 1_000_000L)
 
-            // Parse YOLO output
-            val tPostStart = System.nanoTime()
-            val parsed = parseYoloOutput(
-                output.floatArray, detectionArea
-                // input height
-                // input width
-            )
-            val tPostEnd = System.nanoTime()
-            val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
+                // Parse YOLO output
+                val tPostStart = System.nanoTime()
+                val parsed = parseYoloOutput(
+                    output.floatArray, detectionArea
+                    // input height
+                    // input width
+                )
+                val tPostEnd = System.nanoTime()
+                val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
 
-            val boundingBoxes = parsed.boxes
-            val rawDetections = parsed.rawCount
+                val boundingBoxes = parsed.boxes
+                val rawDetections = parsed.rawCount
 
-            Log.d(
-                TAG,
-                "Detected ${boundingBoxes.size} objects above confidence threshold $confThreshold"
-            )
+                Log.d(
+                    TAG,
+                    "Detected ${boundingBoxes.size} objects above confidence threshold $confThreshold"
+                )
 
-            val tOverallEnd = System.nanoTime()
-            val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
-            Log.d(
-                TAG,
-                "Timing: preprocess=${preprocessMs}ms, inference=${inferenceMs}ms, postprocess=${postprocessMs}ms, total=${totalMs}ms"
-            )
+                val tOverallEnd = System.nanoTime()
+                val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
+                Log.d(
+                    TAG,
+                    "Timing: preprocess=${preprocessMs}ms, inference=${inferenceMs}ms, postprocess=${postprocessMs}ms, total=${totalMs}ms"
+                )
 
-            Detection(
-                boundingBoxes = boundingBoxes,
-                area = detectionArea,
-                inferenceMs = inferenceMs,
-                fps = -1f,
-                rawDetections = rawDetections,
-                afterNmsDetections = boundingBoxes.size
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during detection", e)
-            Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
+                Detection(
+                    boundingBoxes = boundingBoxes,
+                    area = detectionArea,
+                    inferenceMs = inferenceMs,
+                    fps = -1f,
+                    rawDetections = rawDetections,
+                    afterNmsDetections = boundingBoxes.size
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during detection", e)
+                Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
+            }
         }
     }
 
@@ -279,51 +291,59 @@ class FooDetector(
      * The area is cropped and then resized to model input size (via existing imageProcessor).
      */
     fun detectInArea(image: Bitmap, detectionArea: DetectionArea): Detection {
-        return try {
-            val tOverallStart = System.nanoTime()
+        return synchronized(interpreterLock) {
+            // Check if closed while holding lock
+            val currentInterpreter = interpreter
+            if (isClosed || currentInterpreter == null) {
+                Log.w(TAG, "detectInArea() called on closed detector, returning empty result")
+                return Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
+            }
+            try {
+                val tOverallStart = System.nanoTime()
 
-            // Preprocess (crop to area -> resize/normalize -> cast)
-            val tPreStart = System.nanoTime()
-            val input = preprocessImage(image, detectionArea)
-            val tPreEnd = System.nanoTime()
-            val preprocessMs = ((tPreEnd - tPreStart) / 1_000_000L)
+                // Preprocess (crop to area -> resize/normalize -> cast)
+                val tPreStart = System.nanoTime()
+                val input = preprocessImage(image, detectionArea)
+                val tPreEnd = System.nanoTime()
+                val preprocessMs = ((tPreEnd - tPreStart) / 1_000_000L)
 
-            val output = TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
+                val output = TensorBuffer.createFixedSize(modelOutputShape, modelOutputDataType)
 
-            // Inference
-            val t0 = System.nanoTime()
-            interpreter!!.run(input.buffer, output.buffer)
-            val t1 = System.nanoTime()
-            val inferenceMs = ((t1 - t0) / 1_000_000L)
+                // Inference
+                val t0 = System.nanoTime()
+                currentInterpreter.run(input.buffer, output.buffer)
+                val t1 = System.nanoTime()
+                val inferenceMs = ((t1 - t0) / 1_000_000L)
 
-            // Postprocess (map results back to original space using detectionArea offset)
-            val tPostStart = System.nanoTime()
-            val parsed = parseYoloOutput(
-                output.floatArray, detectionArea
-                // input height
-                // input width
-            )
-            val tPostEnd = System.nanoTime()
-            val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
+                // Postprocess (map results back to original space using detectionArea offset)
+                val tPostStart = System.nanoTime()
+                val parsed = parseYoloOutput(
+                    output.floatArray, detectionArea
+                    // input height
+                    // input width
+                )
+                val tPostEnd = System.nanoTime()
+                val postprocessMs = ((tPostEnd - tPostStart) / 1_000_000L)
 
-            val tOverallEnd = System.nanoTime()
-            val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
-            Log.d(
-                TAG,
-                "detectInArea: pre=${preprocessMs}ms, infer=${inferenceMs}ms, post=${postprocessMs}ms, total=${totalMs}ms"
-            )
+                val tOverallEnd = System.nanoTime()
+                val totalMs = ((tOverallEnd - tOverallStart) / 1_000_000L)
+                Log.d(
+                    TAG,
+                    "detectInArea: pre=${preprocessMs}ms, infer=${inferenceMs}ms, post=${postprocessMs}ms, total=${totalMs}ms"
+                )
 
-            Detection(
-                boundingBoxes = parsed.boxes,
-                area = detectionArea,
-                inferenceMs = inferenceMs,
-                fps = -1f,
-                rawDetections = parsed.rawCount,
-                afterNmsDetections = parsed.boxes.size
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during detection in area", e)
-            Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
+                Detection(
+                    boundingBoxes = parsed.boxes,
+                    area = detectionArea,
+                    inferenceMs = inferenceMs,
+                    fps = -1f,
+                    rawDetections = parsed.rawCount,
+                    afterNmsDetections = parsed.boxes.size
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during detection in area", e)
+                Detection(boundingBoxes = emptyList(), area = DetectionArea(0f, 0f, 0f, 0f))
+            }
         }
     }
 
@@ -479,19 +499,22 @@ class FooDetector(
     }
 
     fun close() {
-        interpreter?.close()
-        interpreter = null
-        try {
-            gpuDelegate?.close()
-        } catch (_: Throwable) {
+        synchronized(interpreterLock) {
+            isClosed = true
+            interpreter?.close()
+            interpreter = null
+            try {
+                gpuDelegate?.close()
+            } catch (_: Throwable) {
+            }
+            gpuDelegate = null
+            try {
+                nnApiDelegate?.close()
+            } catch (_: Throwable) {
+            }
+            nnApiDelegate = null
+            Log.d(TAG, "FooDetector closed")
         }
-        gpuDelegate = null
-        try {
-            nnApiDelegate?.close()
-        } catch (_: Throwable) {
-        }
-        nnApiDelegate = null
-        Log.d(TAG, "FooDetector closed")
     }
 
     /** Update the detector's confidence threshold at runtime. */

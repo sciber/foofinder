@@ -14,6 +14,7 @@ tflite = "2.13.0"
 datastore = "1.1.1"
 protobuf = "3.25.3"
 protobufPlugin = "0.9.4"
+navigation = "2.9.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +45,7 @@ tensorflow-lite-gpu-api = { group = "org.tensorflow", name = "tensorflow-lite-gp
 androidx-datastore = { group = "androidx.datastore", name = "datastore", version.ref = "datastore" }
 protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobuf" }
 protobuf-protoc = { group = "com.google.protobuf", name = "protoc", version.ref = "protobuf" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
