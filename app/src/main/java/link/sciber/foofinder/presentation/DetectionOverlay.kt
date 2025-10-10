@@ -20,15 +20,15 @@ import link.sciber.foofinder.domain.BoundingBox
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
 
-val DETECTION_AREA_COLOR: Color = Color.Red
+val DETECTION_AREA_COLOR: Color = Color.Cyan
 const val DETECTION_AREA_STROKE_WIDTH: Float = 4f
 val FOO_CLASS_BOUNDING_BOX_COLOR: Color = Color.Blue
-const val FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 5f
+const val FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 4f
 val NOT_FOO_CLASS_BOUNDING_BOX_COLOR: Color = Color.Magenta
 const val NOT_FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 2f
-val OTHER_CLASS_BOUNDING_BOX_COLOR: Color = Color.Cyan
+val OTHER_CLASS_BOUNDING_BOX_COLOR: Color = Color.Red
 const val OTHER_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 1f
-val BASE_AREA_COLOR: Color = Color.Yellow
+val BASE_AREA_COLOR: Color = Color.Gray
 const val BASE_AREA_STROKE_WIDTH: Float = 3f
 
 @Composable
