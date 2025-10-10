@@ -73,6 +73,7 @@ fun DetectorScreen() {
 
     var availableResolutions by remember { mutableStateOf<List<Size>>(emptyList()) }
     var currentCamera by remember { mutableStateOf<Camera?>(null) }
+    var isCameraReady by remember { mutableStateOf(false) }
     var isTorchAvailable by remember { mutableStateOf(false) }
     var isTorchEnabled by remember { mutableStateOf(false) }
     var scanStrategyConstrained by remember { mutableStateOf(false) }
@@ -344,7 +345,10 @@ fun DetectorScreen() {
                         modifier = Modifier.fillMaxSize(),
                         currentScanStrategy = currentScanStrategy,
                         modelId = currentModelId,
-                        onCameraReady = { camera -> currentCamera = camera },
+                        onCameraReady = { camera ->
+                            currentCamera = camera
+                            isCameraReady = true
+                        },
                         onScanStrategyAutoChange = { enforced ->
                             if (enforced != currentScanStrategy) {
                                 settingsViewModel.onScanStrategyChanged(
@@ -358,6 +362,18 @@ fun DetectorScreen() {
                         onTileCaptureRequesterChange = { requester ->
                             tileCaptureRequester = requester
                         })
+
+                    // Loading indicator while camera is initializing
+                    if (!isCameraReady) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
 
                 // Spacer above FAB
