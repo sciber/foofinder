@@ -30,7 +30,7 @@ fun DetectorInfoBar(
 ) {
     Card(
         modifier = modifier.padding(vertical = 8.dp), colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer
         )
     ) {
