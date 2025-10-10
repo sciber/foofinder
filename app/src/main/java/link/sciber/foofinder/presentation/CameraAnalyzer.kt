@@ -16,20 +16,17 @@ import link.sciber.foofinder.domain.DetectionArea
 import java.io.ByteArrayOutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.ceil
-import kotlin.math.max
 import kotlin.math.min
 
 class CameraAnalyzer(
     private val detector: FooDetector, private val onDetectionResult: (Detection) -> Unit
 ) : ImageAnalysis.Analyzer {
 
-    private var tileIndex: Int = 0
     private val pendingTileCapture = AtomicReference<TileCaptureCallback?>(null)
 
     /** Scanning strategies for object detection. */
     enum class ScanStrategy {
-        SCALED_SINGLE, SINGLE_CENTER, ROWS, COLUMNS, RANDOM
+        SCALED, CENTERED
     }
 
     data class TileCaptureResult(
@@ -44,7 +41,7 @@ class CameraAnalyzer(
         return pendingTileCapture.compareAndSet(null, callback)
     }
 
-    private var strategy = ScanStrategy.RANDOM
+    private var strategy = ScanStrategy.CENTERED
 
     companion object {
         private const val TAG = "CameraAnalyzer"
@@ -101,52 +98,16 @@ class CameraAnalyzer(
                 var detectionAreaUsed: DetectionArea? = null
 
                 val detection = when (strategy) {
-                    ScanStrategy.SCALED_SINGLE -> detector.detect(bitmap).also {
+                    ScanStrategy.SCALED -> detector.detect(bitmap).also {
                         detectionAreaUsed = DetectionArea(
                             0f, 0f, baseSide.toFloat(), baseSide.toFloat()
                         )
                     }
 
-                    ScanStrategy.SINGLE_CENTER -> {
+                    ScanStrategy.CENTERED -> {
                         val tileSize = detector.getModelInputSize().coerceAtMost(baseSide)
-                        val area = computeTileArea(
-                            baseStartX = 0,
-                            baseStartY = 0,
-                            baseSide = baseSide,
-                            tileSize = tileSize,
-                            index = 0,
-                            strategy = ScanStrategy.SINGLE_CENTER,
-                            rotationDegrees = rotationDegrees
-                        )
-
-                        detector.detectInArea(bitmap, area).also { detectionAreaUsed = area }
-                    }
-
-                    ScanStrategy.ROWS, ScanStrategy.COLUMNS -> {
-                        val tileSize = detector.getModelInputSize().coerceAtMost(baseSide)
-                        val area = computeTileArea(
-                            baseStartX = 0,
-                            baseStartY = 0,
-                            baseSide = baseSide,
-                            tileSize = tileSize,
-                            index = tileIndex++,
-                            strategy = strategy,
-                            rotationDegrees = rotationDegrees
-                        )
-
-                        detector.detectInArea(bitmap, area).also { detectionAreaUsed = area }
-                    }
-
-                    ScanStrategy.RANDOM -> {
-                        val tileSize = detector.getModelInputSize().coerceAtMost(baseSide)
-                        val area = computeTileArea(
-                            baseStartX = 0,
-                            baseStartY = 0,
-                            baseSide = baseSide,
-                            tileSize = tileSize,
-                            index = tileIndex++,
-                            strategy = ScanStrategy.RANDOM,
-                            rotationDegrees = rotationDegrees
+                        val area = computeCenterTileArea(
+                            baseStartX = 0, baseStartY = 0, baseSide = baseSide, tileSize = tileSize
                         )
 
                         detector.detectInArea(bitmap, area).also { detectionAreaUsed = area }
@@ -273,78 +234,13 @@ class CameraAnalyzer(
         }
     }
 
-    private fun computeTileArea(
-        baseStartX: Int,
-        baseStartY: Int,
-        baseSide: Int,
-        tileSize: Int,
-        index: Int,
-        strategy: ScanStrategy,
-        rotationDegrees: Int
+    private fun computeCenterTileArea(
+        baseStartX: Int, baseStartY: Int, baseSide: Int, tileSize: Int
     ): DetectionArea {
-        val stepsX = max(1, ceil(baseSide.toFloat() / tileSize).toInt())
-        val stepsY = max(1, ceil(baseSide.toFloat() / tileSize).toInt())
-
-        if (strategy == ScanStrategy.RANDOM) {
-            val maxOffset = (baseSide - tileSize).coerceAtLeast(0)
-            val offsetX = if (maxOffset > 0) kotlin.random.Random.nextInt(maxOffset + 1)
-            else 0
-            val offsetY = if (maxOffset > 0) kotlin.random.Random.nextInt(maxOffset + 1)
-            else 0
-            return DetectionArea(
-                startX = (baseStartX + offsetX).toFloat(),
-                startY = (baseStartY + offsetY).toFloat(),
-                width = tileSize.toFloat(),
-                height = tileSize.toFloat()
-            )
-        }
-
-        if (strategy == ScanStrategy.SINGLE_CENTER) {
-            val offset = ((baseSide - tileSize) / 2f).coerceAtLeast(0f)
-            return DetectionArea(
-                startX = baseStartX + offset,
-                startY = baseStartY + offset,
-                width = tileSize.toFloat(),
-                height = tileSize.toFloat()
-            )
-        }
-
-        val totalTiles = stepsX * stepsY
-        val clampedIndex = if (totalTiles > 0) index % totalTiles else 0
-
-        val isRotated = rotationDegrees == 90 || rotationDegrees == 270
-        val displayCols = if (isRotated) stepsY else stepsX
-        val displayRows = if (isRotated) stepsX else stepsY
-
-        val (col, row) = when (strategy) {
-            ScanStrategy.ROWS -> {
-                var displayCol = clampedIndex % displayCols
-                val displayRow = clampedIndex / displayCols
-                if (isRotated) displayCol = displayCols - 1 - displayCol
-                if (isRotated) displayRow to displayCol
-                else displayCol to displayRow
-            }
-
-            ScanStrategy.COLUMNS -> {
-                val displayRow = clampedIndex % displayRows
-                var displayCol = clampedIndex / displayRows
-                if (isRotated) displayCol = displayCols - 1 - displayCol
-                if (isRotated) displayRow to displayCol
-                else displayCol to displayRow
-            }
-
-            else -> 0 to 0
-        }
-
-        val strideX = if (stepsX > 1) (baseSide - tileSize).toFloat() / (stepsX - 1) else 0f
-        val strideY = if (stepsY > 1) (baseSide - tileSize).toFloat() / (stepsY - 1) else 0f
-
-        val startX = baseStartX + min((col * strideX).toInt(), baseSide - tileSize)
-        val startY = baseStartY + min((row * strideY).toInt(), baseSide - tileSize)
-
+        val offset = ((baseSide - tileSize) / 2f).coerceAtLeast(0f)
         return DetectionArea(
-            startX = startX.toFloat(),
-            startY = startY.toFloat(),
+            startX = baseStartX + offset,
+            startY = baseStartY + offset,
             width = tileSize.toFloat(),
             height = tileSize.toFloat()
         )

@@ -50,7 +50,7 @@ fun CameraPreview(
     currentMaxBoxes: Int,
     currentNmsEnabled: Boolean,
     modifier: Modifier = Modifier,
-    currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.SINGLE_CENTER,
+    currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
     modelId: String = "models/best_plain_float16.tflite",
     onCameraReady: (Camera?) -> Unit = {},
     onScanStrategyAutoChange: (CameraAnalyzer.ScanStrategy) -> Unit = {},
@@ -89,13 +89,13 @@ fun CameraPreview(
         if (notify) {
             onScanStrategyConstraintChange(needsScaledSingle)
         }
-        return if (needsScaledSingle && requested != CameraAnalyzer.ScanStrategy.SCALED_SINGLE) {
+        return if (needsScaledSingle && requested != CameraAnalyzer.ScanStrategy.SCALED) {
             if (notify) {
                 onScanStrategyAutoChange(
-                    CameraAnalyzer.ScanStrategy.SCALED_SINGLE
+                    CameraAnalyzer.ScanStrategy.SCALED
                 )
             }
-            CameraAnalyzer.ScanStrategy.SCALED_SINGLE
+            CameraAnalyzer.ScanStrategy.SCALED
         } else {
             requested
         }
@@ -123,30 +123,30 @@ fun CameraPreview(
                             onCameraReady(null)
 
                             val previewBuilder = Preview.Builder().setTargetResolution(
-                                    resolution
-                                ).setTargetRotation(
-                                    Surface.ROTATION_0
-                                )
+                                resolution
+                            ).setTargetRotation(
+                                Surface.ROTATION_0
+                            )
 
                             val previewUseCase = previewBuilder.build()
 
                             val imageAnalysisBuilder = ImageAnalysis.Builder().setTargetResolution(
-                                    resolution
-                                ).setTargetRotation(
-                                    Surface.ROTATION_0
-                                ).setBackpressureStrategy(
-                                    ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
-                                )
+                                resolution
+                            ).setTargetRotation(
+                                Surface.ROTATION_0
+                            ).setBackpressureStrategy(
+                                ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+                            )
 
                             val imageAnalysisUseCase = imageAnalysisBuilder.build()
 
                             val createdAnalyzer = CameraAnalyzer(
                                 det, onDetectionResult
                             ).also {
-                                    it.setScanStrategy(
-                                        effectiveStrategy
-                                    )
-                                }
+                                it.setScanStrategy(
+                                    effectiveStrategy
+                                )
+                            }
                             analyzer = createdAnalyzer
                             imageAnalysisUseCase.setAnalyzer(
                                 Executors.newSingleThreadExecutor(), createdAnalyzer
@@ -179,11 +179,11 @@ fun CameraPreview(
             val newDetector = FooDetector(
                 context, modelPath = modelId, accelerator = Accelerator.GPU, numThreads = 4
             ).also {
-                    it.setConfidenceThreshold(
-                        currentConfidenceThreshold
-                    )
-                    it.setNmsEnabled(currentNmsEnabled)
-                }
+                it.setConfidenceThreshold(
+                    currentConfidenceThreshold
+                )
+                it.setNmsEnabled(currentNmsEnabled)
+            }
             detector = newDetector
             Log.d("CameraPreview", "FooDetector initialized with model: $modelId")
             currentResolution?.let { applyResolution(it) }
@@ -269,11 +269,11 @@ fun CameraPreview(
                                     0f, baseHeight
                                 )
                                 val right = (box.startX + box.width).coerceIn(
-                                        0f, baseWidth
-                                    )
+                                    0f, baseWidth
+                                )
                                 val bottom = (box.startY + box.height).coerceIn(
-                                        0f, baseHeight
-                                    )
+                                    0f, baseHeight
+                                )
                                 box.copy(
                                     startX = left, startY = top, width = max(
                                         0f, right - left
@@ -285,17 +285,17 @@ fun CameraPreview(
 
                             val adjustedArea = detection.area.let { area ->
                                 val left = area.startX.coerceIn(
-                                        0f, baseWidth
-                                    )
+                                    0f, baseWidth
+                                )
                                 val top = area.startY.coerceIn(
-                                        0f, baseHeight
-                                    )
+                                    0f, baseHeight
+                                )
                                 val right = (area.startX + area.width).coerceIn(
-                                        0f, baseWidth
-                                    )
+                                    0f, baseWidth
+                                )
                                 val bottom = (area.startY + area.height).coerceIn(
-                                        0f, baseHeight
-                                    )
+                                    0f, baseHeight
+                                )
                                 DetectionArea(
                                     startX = left, startY = top, width = max(
                                         0f, right - left

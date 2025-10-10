@@ -88,13 +88,13 @@ fun DetectorSettingsSheet(
                         if (!scanStrategyConstrained) {
                             true
                         } else {
-                            strategy == CameraAnalyzer.ScanStrategy.SCALED_SINGLE
+                            strategy == CameraAnalyzer.ScanStrategy.SCALED
                         }
                     },
                     onSelectedIndex = { idx ->
                         if (idx in strategies.indices) {
                             val strategy = strategies[idx]
-                            if (!scanStrategyConstrained || strategy == CameraAnalyzer.ScanStrategy.SCALED_SINGLE) {
+                            if (!scanStrategyConstrained || strategy == CameraAnalyzer.ScanStrategy.SCALED) {
                                 onScanStrategyChanged(strategy)
                             }
                         }

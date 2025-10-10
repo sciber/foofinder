@@ -25,7 +25,7 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
     data class UiState(
         val resolution: Size? = null,
         val modelId: String = DEFAULT_MODEL_ID,
-        val scanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.SINGLE_CENTER,
+        val scanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
         val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
         val maxBoxes: Int = DEFAULT_MAX_BOXES,
         val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED
@@ -90,10 +90,10 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
 
     private fun String.toScanStrategy(): CameraAnalyzer.ScanStrategy {
         return try {
-            if (isBlank()) CameraAnalyzer.ScanStrategy.SINGLE_CENTER
+            if (isBlank()) CameraAnalyzer.ScanStrategy.CENTERED
             else CameraAnalyzer.ScanStrategy.valueOf(this)
         } catch (_: IllegalArgumentException) {
-            CameraAnalyzer.ScanStrategy.SINGLE_CENTER
+            CameraAnalyzer.ScanStrategy.CENTERED
         }
     }
 
