@@ -381,7 +381,8 @@ fun DetectorScreen() {
                 ) {
                     FloatingActionButton(
                         onClick = { handleSnapshotRequest() },
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(64.dp)
                     ) {
                         if (isSaving) {
                             CircularProgressIndicator(
