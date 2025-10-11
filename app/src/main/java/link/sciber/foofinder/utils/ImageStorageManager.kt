@@ -16,7 +16,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private const val SNAPSHOT_SUBDIR = "FooFinder"
+private const val SNAPSHOT_SUBDIR = "Datasets/FooFinder/images"
 
 /**
  * Result of a successful image save operation
@@ -43,29 +43,36 @@ object ImageStorageManager {
     fun saveDetectionTile(context: Context, bitmap: Bitmap): SaveOutcome {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val displayName = "FooFinder_$timestamp.jpg"
-        val relativePath = "${Environment.DIRECTORY_PICTURES}/$SNAPSHOT_SUBDIR"
+        val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/$SNAPSHOT_SUBDIR"
         val resolver = context.contentResolver
 
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
-                put(MediaStore.Images.Media.IS_PENDING, 1)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             } else {
-                val picturesDir = Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_PICTURES
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS
                 )
-                val targetDir = File(picturesDir, SNAPSHOT_SUBDIR)
+                val targetDir = File(downloadsDir, SNAPSHOT_SUBDIR)
                 if (!targetDir.exists() && !targetDir.mkdirs()) {
                     throw IOException("Unable to create directory: ${targetDir.absolutePath}")
                 }
                 val legacyPath = File(targetDir, displayName).absolutePath
-                put(MediaStore.Images.Media.DATA, legacyPath)
+                put(MediaStore.MediaColumns.DATA, legacyPath)
             }
         }
 
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        // Use MediaStore.Downloads for Download directory on Android Q+
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        } else {
+            MediaStore.Files.getContentUri("external")
+        }
+
+        val uri = resolver.insert(collection, values)
             ?: throw IOException("Failed to create MediaStore entry")
 
         try {
@@ -77,10 +84,10 @@ object ImageStorageManager {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ContentValues().apply {
-                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
                 }.also { resolver.update(uri, it, null, null) }
             } else {
-                val legacyPath = values.getAsString(MediaStore.Images.Media.DATA)
+                val legacyPath = values.getAsString(MediaStore.MediaColumns.DATA)
                 MediaScannerConnection.scanFile(
                     context, arrayOf(legacyPath), arrayOf("image/jpeg"), null
                 )

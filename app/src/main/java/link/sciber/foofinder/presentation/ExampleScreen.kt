@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import link.sciber.foofinder.utils.AnnotationStorageManager
 import java.util.UUID
 
 /**
@@ -139,6 +141,7 @@ fun ExampleScreen(
     var resizingCorner by remember { mutableStateOf<BoundingBox.Corner?>(null) }
     var imageViewSize by remember { mutableStateOf(IntSize.Zero) }
     var imageDisplayBounds by remember { mutableStateOf(Rect.Zero) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
 
     // Calculate actual image display bounds within the view (for ContentScale.Fit)
     fun calculateImageBounds(
@@ -189,35 +192,67 @@ fun ExampleScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = {
-                Text(
-                    text = fileName, style = MaterialTheme.typography.titleMedium
+                title = { Text(fileName) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                },
+                actions = {
+                    // Save annotations button
+                    IconButton(
+                        onClick = {
+                            if (bitmap != null && imageDisplayBounds != Rect.Zero) {
+                                try {
+                                    AnnotationStorageManager.saveAnnotations(
+                                        context = context,
+                                        fileName = fileName,
+                                        boundingBoxes = boundingBoxes.toList(),
+                                        imageWidth = bitmap!!.width,
+                                        imageHeight = bitmap!!.height,
+                                        displayLeft = imageDisplayBounds.left,
+                                        displayTop = imageDisplayBounds.top,
+                                        displayWidth = imageDisplayBounds.width,
+                                        displayHeight = imageDisplayBounds.height
+                                    )
+                                    saveMessage = "Saved ${boundingBoxes.size} annotations"
+                                    Log.d("ExampleScreen", "Annotations saved successfully")
+                                } catch (e: Exception) {
+                                    saveMessage = "Failed to save: ${e.message}"
+                                    Log.e("ExampleScreen", "Failed to save annotations", e)
+                                }
+                            } else {
+                                saveMessage = "No image loaded"
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Done,
+                            contentDescription = "Save annotations"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
-            }, navigationIcon = {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back"
-                    )
-                }
-            }, colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-            )
             )
         }) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // Image viewing area
-            Box(
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
+                    .fillMaxSize()
+                    .padding(paddingValues)
             ) {
+                // Image viewing area
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                ) {
                 when {
                     isLoading -> {
                         Box(
@@ -609,6 +644,34 @@ fun ExampleScreen(
 
             // Spacer below FAB
             Spacer(modifier = Modifier.weight(1f))
+            }
+            
+            // Save message overlay (outside Column, on top of everything)
+            saveMessage?.let { message ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Text(
+                        text = message,
+                        modifier = Modifier
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = MaterialTheme.shapes.small
+                            )
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                // Clear message after 2 seconds
+                LaunchedEffect(message) {
+                    kotlinx.coroutines.delay(2000)
+                    saveMessage = null
+                }
+            }
         }
     }
 }
