@@ -171,10 +171,15 @@ fun ExampleScreen(
     var imageViewSize by remember { mutableStateOf(IntSize.Zero) }
     var imageDisplayBounds by remember { mutableStateOf(Rect.Zero) }
     var deleteMessage by remember { mutableStateOf<String?>(null) }
+    var isNavigatingBack by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
     
     // Handle device back button
-    BackHandler {
-        saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
+    BackHandler(enabled = !isNavigatingBack) {
+        if (!isNavigatingBack) {
+            isNavigatingBack = true
+            saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
+        }
     }
 
     // Calculate actual image display bounds within the view (for ContentScale.Fit)
@@ -226,11 +231,17 @@ fun ExampleScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(fileName) },
+                title = { Text(fileName.substringBeforeLast(".")) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
-                    }) {
+                    IconButton(
+                        onClick = {
+                            if (!isNavigatingBack) {
+                                isNavigatingBack = true
+                                saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
+                            }
+                        },
+                        enabled = !isNavigatingBack
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -241,60 +252,65 @@ fun ExampleScreen(
                     // Delete image and annotation button
                     IconButton(
                         onClick = {
-                            try {
-                                // Delete the image
-                                val imageUriParsed = Uri.parse(imageUri)
-                                context.contentResolver.delete(imageUriParsed, null, null)
-                                
-                                // Try to delete annotation if it exists
+                            if (!isDeleting) {
+                                isDeleting = true
                                 try {
-                                    val txtFileName = fileName.replace(".jpg", ".txt", ignoreCase = true)
-                                        .replace(".jpeg", ".txt", ignoreCase = true)
-                                        .replace(".png", ".txt", ignoreCase = true)
+                                    // Delete the image
+                                    val imageUriParsed = Uri.parse(imageUri)
+                                    context.contentResolver.delete(imageUriParsed, null, null)
                                     
-                                    // Query for the annotation file
-                                    val projection = arrayOf(
-                                        MediaStore.MediaColumns._ID,
-                                        MediaStore.MediaColumns.DISPLAY_NAME
-                                    )
-                                    val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
-                                    val selectionArgs = arrayOf(txtFileName)
-                                    
-                                    context.contentResolver.query(
-                                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                        projection,
-                                        selection,
-                                        selectionArgs,
-                                        null
-                                    )?.use { cursor ->
-                                        if (cursor.moveToFirst()) {
-                                            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                                            val id = cursor.getLong(idColumn)
-                                            val annotationUri = Uri.withAppendedPath(
-                                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                                id.toString()
-                                            )
-                                            context.contentResolver.delete(annotationUri, null, null)
-                                            Log.d("ExampleScreen", "Deleted annotation: $txtFileName")
+                                    // Try to delete annotation if it exists
+                                    try {
+                                        val txtFileName = fileName.replace(".jpg", ".txt", ignoreCase = true)
+                                            .replace(".jpeg", ".txt", ignoreCase = true)
+                                            .replace(".png", ".txt", ignoreCase = true)
+                                        
+                                        // Query for the annotation file
+                                        val projection = arrayOf(
+                                            MediaStore.MediaColumns._ID,
+                                            MediaStore.MediaColumns.DISPLAY_NAME
+                                        )
+                                        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                                        val selectionArgs = arrayOf(txtFileName)
+                                        
+                                        context.contentResolver.query(
+                                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                            projection,
+                                            selection,
+                                            selectionArgs,
+                                            null
+                                        )?.use { cursor ->
+                                            if (cursor.moveToFirst()) {
+                                                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                                                val id = cursor.getLong(idColumn)
+                                                val annotationUri = Uri.withAppendedPath(
+                                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                                    id.toString()
+                                                )
+                                                context.contentResolver.delete(annotationUri, null, null)
+                                                Log.d("ExampleScreen", "Deleted annotation: $txtFileName")
+                                            }
                                         }
+                                    } catch (e: Exception) {
+                                        Log.w("ExampleScreen", "Could not delete annotation", e)
+                                    }
+                                    
+                                    deleteMessage = "Deleted"
+                                    Log.d("ExampleScreen", "Deleted image and annotation")
+                                    
+                                    // Navigate back after short delay
+                                    scope.launch {
+                                        kotlinx.coroutines.delay(500)
+                                        onNavigateBack()
                                     }
                                 } catch (e: Exception) {
-                                    Log.w("ExampleScreen", "Could not delete annotation", e)
+                                    deleteMessage = "Failed to delete: ${e.message}"
+                                    Log.e("ExampleScreen", "Failed to delete", e)
+                                    isDeleting = false
                                 }
-                                
-                                deleteMessage = "Deleted"
-                                Log.d("ExampleScreen", "Deleted image and annotation")
-                                
-                                // Navigate back after short delay
-                                scope.launch {
-                                    kotlinx.coroutines.delay(500)
-                                    onNavigateBack()
-                                }
-                            } catch (e: Exception) {
-                                deleteMessage = "Failed to delete: ${e.message}"
-                                Log.e("ExampleScreen", "Failed to delete", e)
                             }
-                        }
+                        },
+                        enabled = !isDeleting
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,

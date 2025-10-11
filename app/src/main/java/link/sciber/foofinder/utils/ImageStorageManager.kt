@@ -41,8 +41,8 @@ object ImageStorageManager {
      * @throws IOException if save operation fails
      */
     fun saveDetectionTile(context: Context, bitmap: Bitmap): SaveOutcome {
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val displayName = "FooFinder_$timestamp.jpg"
+        val timestamp = SimpleDateFormat("yyMMdd_HHmmss", Locale.US).format(Date())
+        val displayName = "$timestamp.jpg"
         val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/$SNAPSHOT_SUBDIR"
         val resolver = context.contentResolver
 
