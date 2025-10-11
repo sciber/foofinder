@@ -1,7 +1,10 @@
 package link.sciber.foofinder.presentation
 
+import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -19,7 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +40,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,9 +60,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import link.sciber.foofinder.utils.AnnotationStorageManager
 import java.util.UUID
+import androidx.activity.compose.BackHandler
 
 /**
  * Data class representing a bounding box annotation
@@ -125,7 +131,30 @@ data class BoundingBox(
 fun ExampleScreen(
     imageUri: String, fileName: String, onNavigateBack: () -> Unit
 ) {
+    // Save annotations when navigating back
+    fun saveAnnotationsAndNavigateBack(context: Context, bitmap: android.graphics.Bitmap?, bounds: Rect, boxes: List<BoundingBox>) {
+        if (bitmap != null && bounds != Rect.Zero && boxes.isNotEmpty()) {
+            try {
+                AnnotationStorageManager.saveAnnotations(
+                    context = context,
+                    fileName = fileName,
+                    boundingBoxes = boxes,
+                    imageWidth = bitmap.width,
+                    imageHeight = bitmap.height,
+                    displayLeft = bounds.left,
+                    displayTop = bounds.top,
+                    displayWidth = bounds.width,
+                    displayHeight = bounds.height
+                )
+                Log.d("ExampleScreen", "Auto-saved ${boxes.size} annotations")
+            } catch (e: Exception) {
+                Log.e("ExampleScreen", "Failed to auto-save annotations", e)
+            }
+        }
+        onNavigateBack()
+    }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
@@ -141,7 +170,12 @@ fun ExampleScreen(
     var resizingCorner by remember { mutableStateOf<BoundingBox.Corner?>(null) }
     var imageViewSize by remember { mutableStateOf(IntSize.Zero) }
     var imageDisplayBounds by remember { mutableStateOf(Rect.Zero) }
-    var saveMessage by remember { mutableStateOf<String?>(null) }
+    var deleteMessage by remember { mutableStateOf<String?>(null) }
+    
+    // Handle device back button
+    BackHandler {
+        saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
+    }
 
     // Calculate actual image display bounds within the view (for ContentScale.Fit)
     fun calculateImageBounds(
@@ -194,7 +228,9 @@ fun ExampleScreen(
             CenterAlignedTopAppBar(
                 title = { Text(fileName) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -202,36 +238,68 @@ fun ExampleScreen(
                     }
                 },
                 actions = {
-                    // Save annotations button
+                    // Delete image and annotation button
                     IconButton(
                         onClick = {
-                            if (bitmap != null && imageDisplayBounds != Rect.Zero) {
+                            try {
+                                // Delete the image
+                                val imageUriParsed = Uri.parse(imageUri)
+                                context.contentResolver.delete(imageUriParsed, null, null)
+                                
+                                // Try to delete annotation if it exists
                                 try {
-                                    AnnotationStorageManager.saveAnnotations(
-                                        context = context,
-                                        fileName = fileName,
-                                        boundingBoxes = boundingBoxes.toList(),
-                                        imageWidth = bitmap!!.width,
-                                        imageHeight = bitmap!!.height,
-                                        displayLeft = imageDisplayBounds.left,
-                                        displayTop = imageDisplayBounds.top,
-                                        displayWidth = imageDisplayBounds.width,
-                                        displayHeight = imageDisplayBounds.height
+                                    val txtFileName = fileName.replace(".jpg", ".txt", ignoreCase = true)
+                                        .replace(".jpeg", ".txt", ignoreCase = true)
+                                        .replace(".png", ".txt", ignoreCase = true)
+                                    
+                                    // Query for the annotation file
+                                    val projection = arrayOf(
+                                        MediaStore.MediaColumns._ID,
+                                        MediaStore.MediaColumns.DISPLAY_NAME
                                     )
-                                    saveMessage = "Saved ${boundingBoxes.size} annotations"
-                                    Log.d("ExampleScreen", "Annotations saved successfully")
+                                    val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                                    val selectionArgs = arrayOf(txtFileName)
+                                    
+                                    context.contentResolver.query(
+                                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                        projection,
+                                        selection,
+                                        selectionArgs,
+                                        null
+                                    )?.use { cursor ->
+                                        if (cursor.moveToFirst()) {
+                                            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                                            val id = cursor.getLong(idColumn)
+                                            val annotationUri = Uri.withAppendedPath(
+                                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                                id.toString()
+                                            )
+                                            context.contentResolver.delete(annotationUri, null, null)
+                                            Log.d("ExampleScreen", "Deleted annotation: $txtFileName")
+                                        }
+                                    }
                                 } catch (e: Exception) {
-                                    saveMessage = "Failed to save: ${e.message}"
-                                    Log.e("ExampleScreen", "Failed to save annotations", e)
+                                    Log.w("ExampleScreen", "Could not delete annotation", e)
                                 }
-                            } else {
-                                saveMessage = "No image loaded"
+                                
+                                deleteMessage = "Deleted"
+                                Log.d("ExampleScreen", "Deleted image and annotation")
+                                
+                                // Navigate back after short delay
+                                scope.launch {
+                                    kotlinx.coroutines.delay(500)
+                                    onNavigateBack()
+                                }
+                            } catch (e: Exception) {
+                                deleteMessage = "Failed to delete: ${e.message}"
+                                Log.e("ExampleScreen", "Failed to delete", e)
                             }
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Done,
-                            contentDescription = "Save annotations"
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete image and annotations",
+                            tint = MaterialTheme.colorScheme.error
                         )
                     }
                 },
@@ -646,8 +714,8 @@ fun ExampleScreen(
             Spacer(modifier = Modifier.weight(1f))
             }
             
-            // Save message overlay (outside Column, on top of everything)
-            saveMessage?.let { message ->
+            // Delete message overlay (outside Column, on top of everything)
+            deleteMessage?.let { message ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -658,18 +726,18 @@ fun ExampleScreen(
                         text = message,
                         modifier = Modifier
                             .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                color = MaterialTheme.colorScheme.errorContainer,
                                 shape = MaterialTheme.shapes.small
                             )
                             .padding(horizontal = 16.dp, vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
                 // Clear message after 2 seconds
                 LaunchedEffect(message) {
                     kotlinx.coroutines.delay(2000)
-                    saveMessage = null
+                    deleteMessage = null
                 }
             }
         }
