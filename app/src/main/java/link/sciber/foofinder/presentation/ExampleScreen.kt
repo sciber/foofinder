@@ -3,18 +3,23 @@ package link.sciber.foofinder.presentation
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,12 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -96,76 +101,108 @@ fun ExampleScreen(
             )
             )
         }) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(Color.Black)
         ) {
-            when {
-                isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = Color.White)
+            // Image viewing area
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+            ) {
+                when {
+                    isLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
                     }
-                }
 
-                bitmap != null -> {
-                    // Fixed square viewport at the top with zoom and pan inside
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .align(Alignment.TopCenter)
-                            .clipToBounds()
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    // Update scale with constraints (1x to 5x)
-                                    val newScale = (scale * zoom).coerceIn(1f, 5f)
-
-                                    // Update offsets
-                                    offsetX += pan.x
-                                    offsetY += pan.y
-
-                                    // Reset offset when zooming back to 1x
-                                    if (newScale == 1f) {
-                                        offsetX = 0f
-                                        offsetY = 0f
-                                    }
-
-                                    scale = newScale
-                                }
-                            }) {
-                        // Image that zooms and pans within the fixed viewport
-                        Image(
-                            bitmap = bitmap!!.asImageBitmap(),
-                            contentDescription = "Saved image",
+                    bitmap != null -> {
+                        // Fixed square viewport with zoom and pan
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = scale,
-                                    scaleY = scale,
-                                    translationX = offsetX,
-                                    translationY = offsetY
-                                ),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                }
+                                .clipToBounds()
+                                .pointerInput(Unit) {
+                                    detectTransformGestures { _, pan, zoom, _ ->
+                                        // Update scale with constraints (1x to 5x)
+                                        val newScale = (scale * zoom).coerceIn(1f, 5f)
 
-                else -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Failed to load image",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                                        // Update offsets
+                                        offsetX += pan.x
+                                        offsetY += pan.y
+
+                                        // Reset offset when zooming back to 1x
+                                        if (newScale == 1f) {
+                                            offsetX = 0f
+                                            offsetY = 0f
+                                        }
+
+                                        scale = newScale
+                                    }
+                                }) {
+                            // Image that zooms and pans within the fixed viewport
+                            Image(
+                                bitmap = bitmap!!.asImageBitmap(),
+                                contentDescription = "Saved image",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer(
+                                        scaleX = scale,
+                                        scaleY = scale,
+                                        translationX = offsetX,
+                                        translationY = offsetY
+                                    ),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+
+                    else -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Failed to load image",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
                     }
                 }
             }
+
+            // Spacer above FAB
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Annotation FAB - centered between image and bottom
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        // TODO: Add bounding box annotation
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add bounding box",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            // Spacer below FAB
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }
