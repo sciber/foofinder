@@ -20,6 +20,7 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.45f
         private const val DEFAULT_MAX_BOXES = 15
         private const val DEFAULT_NMS_ENABLED = true
+        private const val DEFAULT_TORCH_ENABLED = false
     }
 
     data class UiState(
@@ -28,7 +29,8 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         val scanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
         val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
         val maxBoxes: Int = DEFAULT_MAX_BOXES,
-        val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED
+        val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED,
+        val torchEnabled: Boolean = DEFAULT_TORCH_ENABLED
     )
 
     private val repository = CameraSettingsRepository(application.userSettingsStore)
@@ -45,7 +47,8 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
                     scanStrategy = settings.scanStrategy.toScanStrategy(),
                     confidenceThreshold = settings.toConfidenceThreshold(),
                     maxBoxes = settings.toMaxBoxes(),
-                    nmsEnabled = settings.toNmsEnabled())
+                    nmsEnabled = settings.toNmsEnabled(),
+                    torchEnabled = settings.toTorchEnabled())
             }
         }
     }
@@ -80,6 +83,11 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch { repository.setNmsEnabled(enabled) }
     }
 
+    fun onTorchEnabledChanged(enabled: Boolean) {
+        _uiState.update { it.copy(torchEnabled = enabled) }
+        viewModelScope.launch { repository.setTorchEnabled(enabled) }
+    }
+
     private fun UserSettings.toResolution(): Size? {
         return if (resolutionWidth > 0 && resolutionHeight > 0) {
             Size(resolutionWidth, resolutionHeight)
@@ -108,5 +116,9 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
 
     private fun UserSettings.toNmsEnabled(): Boolean {
         return if (hasNmsEnabled()) nmsEnabled else DEFAULT_NMS_ENABLED
+    }
+
+    private fun UserSettings.toTorchEnabled(): Boolean {
+        return if (hasTorchEnabled()) torchEnabled else DEFAULT_TORCH_ENABLED
     }
 }

@@ -11,4 +11,5 @@ message UserSettings {
   optional float confidence_threshold = 5;
   optional int32 max_boxes = 6;
   optional bool nms_enabled = 7;
+  optional bool torch_enabled = 8;
 }

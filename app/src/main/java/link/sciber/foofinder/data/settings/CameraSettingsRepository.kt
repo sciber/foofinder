@@ -65,4 +65,10 @@ class CameraSettingsRepository(
             current.toBuilder().setNmsEnabled(enabled).build()
         }
     }
+
+    suspend fun setTorchEnabled(enabled: Boolean) {
+        dataStore.updateData { current ->
+            current.toBuilder().setTorchEnabled(enabled).build()
+        }
+    }
 }

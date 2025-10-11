@@ -85,6 +85,7 @@ fun DetectorScreen(
     val currentResolution = settingsState.resolution
     val currentModelId = settingsState.modelId
     val currentScanStrategy = settingsState.scanStrategy
+    val savedTorchEnabled = settingsState.torchEnabled
 
     val modelOptions = remember {
         listOf("models/best_plain_float16.tflite" to "DeePoo YOLOX Nano")
@@ -237,6 +238,14 @@ fun DetectorScreen(
         }
     }
 
+    // Restore saved torch state when camera is ready
+    LaunchedEffect(currentCamera, isTorchAvailable, savedTorchEnabled) {
+        val cam = currentCamera
+        if (cam != null && isTorchAvailable && savedTorchEnabled && !isTorchEnabled) {
+            cam.cameraControl.enableTorch(true).addListener(Runnable {}, mainExecutor)
+        }
+    }
+
     DisposableEffect(currentCamera) {
         val cam = currentCamera
         if (cam == null) {
@@ -253,6 +262,7 @@ fun DetectorScreen(
         if (cam != null && isTorchAvailable) {
             val desiredState = !isTorchEnabled
             cam.cameraControl.enableTorch(desiredState).addListener(Runnable {}, mainExecutor)
+            settingsViewModel.onTorchEnabledChanged(desiredState)
         }
     }
 
