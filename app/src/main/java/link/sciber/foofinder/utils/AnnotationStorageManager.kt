@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import link.sciber.foofinder.domain.AnnotationBox
 import java.io.IOException
+import java.util.Locale
 
 private const val LABELS_SUBDIR = "Datasets/FooFinder/labels"
 
@@ -64,7 +65,8 @@ object AnnotationStorageManager {
 
             // YOLO format: class_id x_center y_center width height
             // Using class_id = 0 (single class "poo")
-            "0 %.6f %.6f %.6f %.6f".format(centerX, centerY, width, height)
+            // Use Locale.US to ensure period as decimal separator
+            "0 %.6f %.6f %.6f %.6f".format(Locale.US, centerX, centerY, width, height)
         }
 
         val values = ContentValues().apply {
