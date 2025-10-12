@@ -73,28 +73,30 @@ fun DatasetScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(
+                        onClick = {
+                            // Prevent concurrent navigation
+                            if (!isNavigating) {
+                                isNavigating = true
+                                onNavigateToDetector()
+                            }
+                        }, enabled = !isNavigating
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.radar_24),
+                            contentDescription = "Detector"
+                        )
+                    }
+                },
                 title = {
-                Text(
-                    text = "Dataset", fontWeight = FontWeight.SemiBold
-                )
-            }, actions = {
-                IconButton(
-                    onClick = {
-                        // Prevent concurrent navigation
-                        if (!isNavigating) {
-                            isNavigating = true
-                            onNavigateToDetector()
-                        }
-                    }, enabled = !isNavigating
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.radar_24),
-                        contentDescription = "Detector"
+                    Text(
+                        text = "Dataset", fontWeight = FontWeight.SemiBold
                     )
-                }
-            }, colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background
-            )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }) { paddingValues ->
         when {

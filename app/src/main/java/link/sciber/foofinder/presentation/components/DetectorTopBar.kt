@@ -13,7 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import link.sciber.foofinder.R
 
 /**
- * Top app bar for the detector screen with torch and dataset controls
+ * Top app bar for the detector screen with dataset navigation and torch control
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,38 +24,41 @@ fun DetectorTopBar(
     onDatasetClick: () -> Unit = {}
 ) {
     TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onDatasetClick) {
+                Icon(
+                    painter = painterResource(id = R.drawable.dataset_24),
+                    contentDescription = "Dataset"
+                )
+            }
+        },
         title = {
-        Text(
-            text = "Detector", fontWeight = FontWeight.SemiBold
+            Text(
+                text = "Detector", fontWeight = FontWeight.SemiBold
+            )
+        },
+        actions = {
+            val iconRes = if (isTorchEnabled) {
+                R.drawable.flashlight_on_24
+            } else {
+                R.drawable.flashlight_off_24
+            }
+            val contentDescription = if (isTorchEnabled) {
+                "Flashlight On"
+            } else {
+                "Flashlight Off"
+            }
+
+            IconButton(
+                onClick = onToggleTorch, enabled = isTorchAvailable
+            ) {
+                Icon(
+                    painter = painterResource(id = iconRes), contentDescription = contentDescription
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.background
         )
-    }, actions = {
-        val iconRes = if (isTorchEnabled) {
-            R.drawable.flashlight_on_24
-        } else {
-            R.drawable.flashlight_off_24
-        }
-        val contentDescription = if (isTorchEnabled) {
-            "Flashlight On"
-        } else {
-            "Flashlight Off"
-        }
-
-        IconButton(
-            onClick = onToggleTorch, enabled = isTorchAvailable
-        ) {
-            Icon(
-                painter = painterResource(id = iconRes), contentDescription = contentDescription
-            )
-        }
-
-        IconButton(onClick = onDatasetClick) {
-            Icon(
-                painter = painterResource(id = R.drawable.dataset_24),
-                contentDescription = "Dataset"
-            )
-        }
-    }, colors = TopAppBarDefaults.topAppBarColors(
-        containerColor = MaterialTheme.colorScheme.background
-    )
     )
 }
