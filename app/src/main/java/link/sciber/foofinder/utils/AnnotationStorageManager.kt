@@ -6,7 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import link.sciber.foofinder.presentation.BoundingBox
+import link.sciber.foofinder.domain.AnnotationBox
 import java.io.IOException
 
 private const val LABELS_SUBDIR = "Datasets/FooFinder/labels"
@@ -24,7 +24,7 @@ object AnnotationStorageManager {
      *
      * @param context Android context
      * @param fileName Base filename (e.g., "FooFinder_20241011_123456.jpg")
-     * @param boundingBoxes List of bounding boxes in display coordinates
+     * @param boundingBoxes List of annotation boxes in display coordinates
      * @param imageWidth Original image width in pixels
      * @param imageHeight Original image height in pixels
      * @return URI of the saved annotation file
@@ -33,7 +33,7 @@ object AnnotationStorageManager {
     fun saveAnnotations(
         context: Context,
         fileName: String,
-        boundingBoxes: List<BoundingBox>,
+        boundingBoxes: List<AnnotationBox>,
         imageWidth: Int,
         imageHeight: Int,
         displayLeft: Float,
