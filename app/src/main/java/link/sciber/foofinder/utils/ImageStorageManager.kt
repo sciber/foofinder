@@ -2,14 +2,12 @@ package link.sciber.foofinder.utils
 
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.widget.Toast
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -22,19 +20,17 @@ private const val SNAPSHOT_SUBDIR = "Datasets/FooFinder/images"
  * Result of a successful image save operation
  */
 data class SaveOutcome(
-    val uri: Uri,
-    val displayName: String,
-    val locationDescription: String
+    val uri: Uri, val displayName: String, val locationDescription: String
 )
 
 /**
  * Manages saving detection tiles to device storage and opening images
  */
 object ImageStorageManager {
-    
+
     /**
      * Saves a detection tile bitmap to the device gallery
-     * 
+     *
      * @param context Android context
      * @param bitmap The detection tile bitmap to save
      * @return SaveOutcome containing URI and metadata
@@ -94,35 +90,11 @@ object ImageStorageManager {
             }
 
             return SaveOutcome(
-                uri = uri,
-                displayName = displayName,
-                locationDescription = relativePath
+                uri = uri, displayName = displayName, locationDescription = relativePath
             )
         } catch (e: Exception) {
             resolver.delete(uri, null, null)
             throw e
-        }
-    }
-
-    /**
-     * Opens an image in the device's default image viewer
-     * 
-     * @param context Android context
-     * @param uri URI of the image to open
-     */
-    fun openImagePreview(context: Context, uri: Uri) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "image/*")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        if (intent.resolveActivity(context.packageManager) != null) {
-            context.startActivity(intent)
-        } else {
-            Toast.makeText(
-                context,
-                "No app found to open saved image",
-                Toast.LENGTH_SHORT
-            ).show()
         }
     }
 }

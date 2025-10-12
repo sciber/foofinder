@@ -4,8 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -59,12 +61,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import link.sciber.foofinder.utils.AnnotationStorageManager
 import java.util.UUID
-import androidx.activity.compose.BackHandler
 
 /**
  * Data class representing a bounding box annotation
@@ -132,7 +134,9 @@ fun ExampleScreen(
     imageUri: String, fileName: String, onNavigateBack: () -> Unit
 ) {
     // Save annotations when navigating back
-    fun saveAnnotationsAndNavigateBack(context: Context, bitmap: android.graphics.Bitmap?, bounds: Rect, boxes: List<BoundingBox>) {
+    fun saveAnnotationsAndNavigateBack(
+        context: Context, bitmap: Bitmap?, bounds: Rect, boxes: List<BoundingBox>
+    ) {
         if (bitmap != null && bounds != Rect.Zero && boxes.isNotEmpty()) {
             try {
                 AnnotationStorageManager.saveAnnotations(
@@ -153,9 +157,10 @@ fun ExampleScreen(
         }
         onNavigateBack()
     }
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
     // Zoom and pan state
@@ -173,21 +178,20 @@ fun ExampleScreen(
     var deleteMessage by remember { mutableStateOf<String?>(null) }
     var isNavigatingBack by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
-    
+
     // Handle device back button
     BackHandler(enabled = !isNavigatingBack) {
         if (!isNavigatingBack) {
             isNavigatingBack = true
-            saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
+            saveAnnotationsAndNavigateBack(
+                context, bitmap, imageDisplayBounds, boundingBoxes.toList()
+            )
         }
     }
 
     // Calculate actual image display bounds within the view (for ContentScale.Fit)
     fun calculateImageBounds(
-        viewWidth: Float,
-        viewHeight: Float,
-        imageWidth: Int,
-        imageHeight: Int
+        viewWidth: Float, viewHeight: Float, imageWidth: Int, imageHeight: Int
     ): Rect {
         val viewAspect = viewWidth / viewHeight
         val imageAspect = imageWidth.toFloat() / imageHeight.toFloat()
@@ -218,10 +222,11 @@ fun ExampleScreen(
         isLoading = true
         bitmap = withContext(Dispatchers.IO) {
             try {
-                context.contentResolver.openInputStream(Uri.parse(imageUri))?.use { stream ->
+                context.contentResolver.openInputStream(imageUri.toUri())?.use { stream ->
                     BitmapFactory.decodeStream(stream)
                 }
             } catch (e: Exception) {
+                Log.e("ExampleScreen", "Failed to load image", e)
                 null
             }
         }
@@ -237,10 +242,11 @@ fun ExampleScreen(
                         onClick = {
                             if (!isNavigatingBack) {
                                 isNavigatingBack = true
-                                saveAnnotationsAndNavigateBack(context, bitmap, imageDisplayBounds, boundingBoxes.toList())
+                                saveAnnotationsAndNavigateBack(
+                                    context, bitmap, imageDisplayBounds, boundingBoxes.toList()
+                                )
                             }
-                        },
-                        enabled = !isNavigatingBack
+                        }, enabled = !isNavigatingBack
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -256,48 +262,58 @@ fun ExampleScreen(
                                 isDeleting = true
                                 try {
                                     // Delete the image
-                                    val imageUriParsed = Uri.parse(imageUri)
+                                    val imageUriParsed = imageUri.toUri()
                                     context.contentResolver.delete(imageUriParsed, null, null)
-                                    
-                                    // Try to delete annotation if it exists
-                                    try {
-                                        val txtFileName = fileName.replace(".jpg", ".txt", ignoreCase = true)
-                                            .replace(".jpeg", ".txt", ignoreCase = true)
-                                            .replace(".png", ".txt", ignoreCase = true)
-                                        
-                                        // Query for the annotation file
-                                        val projection = arrayOf(
-                                            MediaStore.MediaColumns._ID,
-                                            MediaStore.MediaColumns.DISPLAY_NAME
-                                        )
-                                        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
-                                        val selectionArgs = arrayOf(txtFileName)
-                                        
-                                        context.contentResolver.query(
-                                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                            projection,
-                                            selection,
-                                            selectionArgs,
-                                            null
-                                        )?.use { cursor ->
-                                            if (cursor.moveToFirst()) {
-                                                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                                                val id = cursor.getLong(idColumn)
-                                                val annotationUri = Uri.withAppendedPath(
-                                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                                                    id.toString()
-                                                )
-                                                context.contentResolver.delete(annotationUri, null, null)
-                                                Log.d("ExampleScreen", "Deleted annotation: $txtFileName")
+
+                                    // Try to delete annotation if it exists (API 29+)
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                        try {
+                                            val txtFileName =
+                                                fileName.replace(".jpg", ".txt", ignoreCase = true)
+                                                    .replace(".jpeg", ".txt", ignoreCase = true)
+                                                    .replace(".png", ".txt", ignoreCase = true)
+
+                                            // Query for the annotation file
+                                            val projection = arrayOf(
+                                                MediaStore.MediaColumns._ID,
+                                                MediaStore.MediaColumns.DISPLAY_NAME
+                                            )
+                                            val selection =
+                                                "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                                            val selectionArgs = arrayOf(txtFileName)
+
+                                            context.contentResolver.query(
+                                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                                projection,
+                                                selection,
+                                                selectionArgs,
+                                                null
+                                            )?.use { cursor ->
+                                                if (cursor.moveToFirst()) {
+                                                    val idColumn =
+                                                        cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                                                    val id = cursor.getLong(idColumn)
+                                                    val annotationUri = Uri.withAppendedPath(
+                                                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                                        id.toString()
+                                                    )
+                                                    context.contentResolver.delete(
+                                                        annotationUri, null, null
+                                                    )
+                                                    Log.d(
+                                                        "ExampleScreen",
+                                                        "Deleted annotation: $txtFileName"
+                                                    )
+                                                }
                                             }
+                                        } catch (e: Exception) {
+                                            Log.w("ExampleScreen", "Could not delete annotation", e)
                                         }
-                                    } catch (e: Exception) {
-                                        Log.w("ExampleScreen", "Could not delete annotation", e)
                                     }
-                                    
+
                                     deleteMessage = "Deleted"
                                     Log.d("ExampleScreen", "Deleted image and annotation")
-                                    
+
                                     // Navigate back after short delay
                                     scope.launch {
                                         kotlinx.coroutines.delay(500)
@@ -309,8 +325,7 @@ fun ExampleScreen(
                                     isDeleting = false
                                 }
                             }
-                        },
-                        enabled = !isDeleting
+                        }, enabled = !isDeleting
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
@@ -337,399 +352,397 @@ fun ExampleScreen(
                         .fillMaxWidth()
                         .aspectRatio(1f)
                 ) {
-                when {
-                    isLoading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-
-                    bitmap != null -> {
-                        // Calculate image display bounds
-                        LaunchedEffect(imageViewSize, bitmap) {
-                            if (imageViewSize.width > 0 && imageViewSize.height > 0) {
-                                imageDisplayBounds = calculateImageBounds(
-                                    imageViewSize.width.toFloat(),
-                                    imageViewSize.height.toFloat(),
-                                    bitmap!!.width,
-                                    bitmap!!.height
-                                )
+                    when {
+                        isLoading -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             }
                         }
 
-                        // Fixed square viewport with zoom and pan
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clipToBounds()
-                                .onSizeChanged { size ->
-                                    imageViewSize = size
-                                }) {
-                            // Image that zooms and pans within the fixed viewport
-                            Image(
-                                bitmap = bitmap!!.asImageBitmap(),
-                                contentDescription = "Saved image",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer(
-                                        scaleX = scale,
-                                        scaleY = scale,
-                                        translationX = offsetX,
-                                        translationY = offsetY
-                                    ),
-                                contentScale = ContentScale.Fit
-                            )
-
-                            // Bounding box overlay - Canvas for drawing
-                            Canvas(
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                // Draw all bounding boxes within image bounds
-                                boundingBoxes.forEach { box ->
-                                    val isActive = box.id == activeBoxId
-                                    val strokeColor =
-                                        if (isActive) Color(0xFF64B5F6) else Color(0xFF1976D2)
-                                    val strokeWidth = if (isActive) 5f else 3f
-
-                                    // Draw box
-                                    drawRect(
-                                        color = strokeColor,
-                                        topLeft = Offset(box.left, box.top),
-                                        size = Size(box.right - box.left, box.bottom - box.top),
-                                        style = Stroke(width = strokeWidth)
+                        bitmap != null -> {
+                            // Calculate image display bounds
+                            LaunchedEffect(imageViewSize, bitmap) {
+                                if (imageViewSize.width > 0 && imageViewSize.height > 0) {
+                                    imageDisplayBounds = calculateImageBounds(
+                                        imageViewSize.width.toFloat(),
+                                        imageViewSize.height.toFloat(),
+                                        bitmap!!.width,
+                                        bitmap!!.height
                                     )
-
-                                    // Draw corner handles and delete button for active box
-                                    if (box.id == activeBoxId) {
-                                        // Corner handles (only 3 - top-right is replaced by delete button)
-                                        val handleSize = 15f
-                                        listOf(
-                                            Offset(box.left, box.top),        // Top-left
-                                            Offset(box.left, box.bottom),     // Bottom-left
-                                            Offset(box.right, box.bottom)     // Bottom-right
-                                        ).forEach { corner ->
-                                            drawCircle(
-                                                color = Color(0xFF2196F3),
-                                                radius = handleSize,
-                                                center = corner,
-                                                style = Fill
-                                            )
-                                            drawCircle(
-                                                color = Color.White,
-                                                radius = handleSize - 3f,
-                                                center = corner,
-                                                style = Stroke(width = 2f)
-                                            )
-                                        }
-
-                                        // Delete button at top-right corner (replaces resize handle)
-                                        val deleteButtonX = box.right
-                                        val deleteButtonY = box.top
-                                        val deleteButtonRadius = 18f
-
-                                        // Delete button background
-                                        drawCircle(
-                                            color = Color(0xFFFF5252),
-                                            radius = deleteButtonRadius,
-                                            center = Offset(deleteButtonX, deleteButtonY),
-                                            style = Fill
-                                        )
-
-                                        // Delete button border
-                                        drawCircle(
-                                            color = Color.White,
-                                            radius = deleteButtonRadius,
-                                            center = Offset(deleteButtonX, deleteButtonY),
-                                            style = Stroke(width = 2f)
-                                        )
-
-                                        // Draw X icon
-                                        val xSize = 7f
-                                        drawLine(
-                                            color = Color.White,
-                                            start = Offset(
-                                                deleteButtonX - xSize,
-                                                deleteButtonY - xSize
-                                            ),
-                                            end = Offset(
-                                                deleteButtonX + xSize,
-                                                deleteButtonY + xSize
-                                            ),
-                                            strokeWidth = 3f
-                                        )
-                                        drawLine(
-                                            color = Color.White,
-                                            start = Offset(
-                                                deleteButtonX + xSize,
-                                                deleteButtonY - xSize
-                                            ),
-                                            end = Offset(
-                                                deleteButtonX - xSize,
-                                                deleteButtonY + xSize
-                                            ),
-                                            strokeWidth = 3f
-                                        )
-                                    }
                                 }
                             }
 
-                            // Transparent interaction layer on top
+                            // Fixed square viewport with zoom and pan
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color.Transparent)
-                                    .pointerInput("tap") {
-                                        detectTapGestures { offset ->
-                                            Log.d(
-                                                "ExampleScreen",
-                                                "Tap at: (${offset.x}, ${offset.y})"
+                                    .clipToBounds()
+                                    .onSizeChanged { size ->
+                                        imageViewSize = size
+                                    }) {
+                                // Image that zooms and pans within the fixed viewport
+                                Image(
+                                    bitmap = bitmap!!.asImageBitmap(),
+                                    contentDescription = "Saved image",
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer(
+                                            scaleX = scale,
+                                            scaleY = scale,
+                                            translationX = offsetX,
+                                            translationY = offsetY
+                                        ),
+                                    contentScale = ContentScale.Fit
+                                )
+
+                                // Bounding box overlay - Canvas for drawing
+                                Canvas(
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    // Draw all bounding boxes within image bounds
+                                    boundingBoxes.forEach { box ->
+                                        val isActive = box.id == activeBoxId
+                                        val strokeColor =
+                                            if (isActive) Color(0xFF64B5F6) else Color(0xFF1976D2)
+                                        val strokeWidth = if (isActive) 5f else 3f
+
+                                        // Draw box
+                                        drawRect(
+                                            color = strokeColor,
+                                            topLeft = Offset(box.left, box.top),
+                                            size = Size(box.right - box.left, box.bottom - box.top),
+                                            style = Stroke(width = strokeWidth)
+                                        )
+
+                                        // Draw corner handles and delete button for active box
+                                        if (box.id == activeBoxId) {
+                                            // Corner handles (only 3 - top-right is replaced by delete button)
+                                            val handleSize = 15f
+                                            listOf(
+                                                Offset(box.left, box.top),        // Top-left
+                                                Offset(box.left, box.bottom),     // Bottom-left
+                                                Offset(box.right, box.bottom)     // Bottom-right
+                                            ).forEach { corner ->
+                                                drawCircle(
+                                                    color = Color(0xFF2196F3),
+                                                    radius = handleSize,
+                                                    center = corner,
+                                                    style = Fill
+                                                )
+                                                drawCircle(
+                                                    color = Color.White,
+                                                    radius = handleSize - 3f,
+                                                    center = corner,
+                                                    style = Stroke(width = 2f)
+                                                )
+                                            }
+
+                                            // Delete button at top-right corner (replaces resize handle)
+                                            val deleteButtonX = box.right
+                                            val deleteButtonY = box.top
+                                            val deleteButtonRadius = 18f
+
+                                            // Delete button background
+                                            drawCircle(
+                                                color = Color(0xFFFF5252),
+                                                radius = deleteButtonRadius,
+                                                center = Offset(deleteButtonX, deleteButtonY),
+                                                style = Fill
                                             )
 
-                                            // Check if tapping delete button on active box
-                                            val activeBox =
-                                                boundingBoxes.find { it.id == activeBoxId }
-                                            if (activeBox != null && activeBox.isOnDeleteButton(
-                                                    offset.x, offset.y
-                                                )
-                                            ) {
-                                                Log.d(
-                                                    "ExampleScreen",
-                                                    "Delete button tapped for box: ${activeBox.id}"
-                                                )
-                                                boundingBoxes.remove(activeBox)
-                                                activeBoxId = null
-                                                return@detectTapGestures
-                                            }
+                                            // Delete button border
+                                            drawCircle(
+                                                color = Color.White,
+                                                radius = deleteButtonRadius,
+                                                center = Offset(deleteButtonX, deleteButtonY),
+                                                style = Stroke(width = 2f)
+                                            )
 
-                                            // Find which box we're tapping
-                                            val tappedBox = boundingBoxes.findLast { box ->
-                                                box.contains(offset.x, offset.y) || box.isOnBorder(
-                                                    offset.x, offset.y
-                                                )
-                                            }
-
-                                            if (tappedBox != null) {
-                                                Log.d(
-                                                    "ExampleScreen", "Selected box: ${tappedBox.id}"
-                                                )
-                                                activeBoxId = tappedBox.id
-                                            } else {
-                                                // Deselect if tapping empty area
-                                                Log.d("ExampleScreen", "Deselected")
-                                                activeBoxId = null
-                                            }
+                                            // Draw X icon
+                                            val xSize = 7f
+                                            drawLine(
+                                                color = Color.White, start = Offset(
+                                                    deleteButtonX - xSize, deleteButtonY - xSize
+                                                ), end = Offset(
+                                                    deleteButtonX + xSize, deleteButtonY + xSize
+                                                ), strokeWidth = 3f
+                                            )
+                                            drawLine(
+                                                color = Color.White, start = Offset(
+                                                    deleteButtonX + xSize, deleteButtonY - xSize
+                                                ), end = Offset(
+                                                    deleteButtonX - xSize, deleteButtonY + xSize
+                                                ), strokeWidth = 3f
+                                            )
                                         }
                                     }
-                                    .pointerInput("drag") {
-                                        detectDragGestures(onDragStart = { offset ->
-                                            Log.d(
-                                                "ExampleScreen",
-                                                "Drag start at: (${offset.x}, ${offset.y})"
-                                            )
+                                }
 
-                                            // Find which box we're dragging
-                                            val draggedBox =
-                                                boundingBoxes.find { it.id == activeBoxId }
-
-                                            if (draggedBox != null) {
-                                                // Check if on delete button - don't allow dragging from there
-                                                if (draggedBox.isOnDeleteButton(
-                                                        offset.x, offset.y
-                                                    )
-                                                ) {
-                                                    // Delete button click handled by tap gesture, ignore drag
-                                                    return@detectDragGestures
-                                                }
-
-                                                // Check if starting a resize or move
-                                                val corner = draggedBox.getCornerHandle(
-                                                    offset.x, offset.y
+                                // Transparent interaction layer on top
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Transparent)
+                                        .pointerInput("tap") {
+                                            detectTapGestures { offset ->
+                                                Log.d(
+                                                    "ExampleScreen",
+                                                    "Tap at: (${offset.x}, ${offset.y})"
                                                 )
-                                                if (corner != null) {
-                                                    Log.d(
-                                                        "ExampleScreen", "Resizing corner: $corner"
-                                                    )
-                                                    resizingCorner = corner
-                                                } else if (draggedBox.contains(
+
+                                                // Check if tapping delete button on active box
+                                                val activeBox =
+                                                    boundingBoxes.find { it.id == activeBoxId }
+                                                if (activeBox != null && activeBox.isOnDeleteButton(
                                                         offset.x, offset.y
                                                     )
                                                 ) {
-                                                    Log.d("ExampleScreen", "Moving box")
-                                                    isDragging = true
-                                                }
-                                            }
-                                        }, onDrag = { _, dragAmount ->
-                                            val boxIndex =
-                                                boundingBoxes.indexOfFirst { it.id == activeBoxId }
-                                            if (boxIndex != -1) {
-                                                val activeBox = boundingBoxes[boxIndex]
-
-                                                // Create new box with updated coordinates to trigger recomposition
-                                                val updatedBox = if (resizingCorner != null) {
-                                                    // Resize the box (no TOP_RIGHT since it's the delete button)
-                                                    when (resizingCorner) {
-                                                        BoundingBox.Corner.TOP_LEFT -> {
-                                                            activeBox.copy(
-                                                                left = (activeBox.left + dragAmount.x).coerceAtMost(
-                                                                    activeBox.right - 50f
-                                                                ).coerceIn(
-                                                                    imageDisplayBounds.left,
-                                                                    imageDisplayBounds.right
-                                                                ),
-                                                                top = (activeBox.top + dragAmount.y).coerceAtMost(
-                                                                    activeBox.bottom - 50f
-                                                                ).coerceIn(
-                                                                    imageDisplayBounds.top,
-                                                                    imageDisplayBounds.bottom
-                                                                )
-                                                            )
-                                                        }
-
-                                                        BoundingBox.Corner.BOTTOM_LEFT -> {
-                                                            activeBox.copy(
-                                                                left = (activeBox.left + dragAmount.x).coerceAtMost(
-                                                                    activeBox.right - 50f
-                                                                ).coerceIn(
-                                                                    imageDisplayBounds.left,
-                                                                    imageDisplayBounds.right
-                                                                ),
-                                                                bottom = (activeBox.bottom + dragAmount.y).coerceAtLeast(
-                                                                    activeBox.top + 50f
-                                                                ).coerceIn(
-                                                                    imageDisplayBounds.top,
-                                                                    imageDisplayBounds.bottom
-                                                                )
-                                                            )
-                                                        }
-
-                                                        BoundingBox.Corner.BOTTOM_RIGHT -> {
-                                                            activeBox.copy(
-                                                                right = (activeBox.right + dragAmount.x).coerceAtLeast(
-                                                                    activeBox.left + 50f
-                                                                ).coerceIn(
-                                                                    imageDisplayBounds.left,
-                                                                    imageDisplayBounds.right
-                                                                ),
-                                                                bottom = (activeBox.bottom + dragAmount.y).coerceAtLeast(
-                                                                    activeBox.top + 50f
-                                                                ).coerceIn(
-                                                                    imageDisplayBounds.top,
-                                                                    imageDisplayBounds.bottom
-                                                                )
-                                                            )
-                                                        }
-
-                                                        else -> activeBox
-                                                    }
-                                                } else if (isDragging) {
-                                                    // Move the box
-                                                    val boxWidth = activeBox.right - activeBox.left
-                                                    val boxHeight = activeBox.bottom - activeBox.top
-
-                                                    val newLeft =
-                                                        (activeBox.left + dragAmount.x).coerceIn(
-                                                            imageDisplayBounds.left,
-                                                            imageDisplayBounds.right - boxWidth
-                                                        )
-                                                    val newTop =
-                                                        (activeBox.top + dragAmount.y).coerceIn(
-                                                            imageDisplayBounds.top,
-                                                            imageDisplayBounds.bottom - boxHeight
-                                                        )
-
-                                                    activeBox.copy(
-                                                        left = newLeft,
-                                                        top = newTop,
-                                                        right = newLeft + boxWidth,
-                                                        bottom = newTop + boxHeight
+                                                    Log.d(
+                                                        "ExampleScreen",
+                                                        "Delete button tapped for box: ${activeBox.id}"
                                                     )
-                                                } else {
-                                                    activeBox
+                                                    boundingBoxes.remove(activeBox)
+                                                    activeBoxId = null
+                                                    return@detectTapGestures
                                                 }
 
-                                                // Replace the box in the list to trigger recomposition
-                                                boundingBoxes[boxIndex] = updatedBox
-                                            }
-                                        }, onDragEnd = {
-                                            Log.d("ExampleScreen", "Drag ended")
-                                            isDragging = false
-                                            resizingCorner = null
-                                        })
-                                    })
-                        }
-                    }
+                                                // Find which box we're tapping
+                                                val tappedBox = boundingBoxes.findLast { box ->
+                                                    box.contains(
+                                                        offset.x, offset.y
+                                                    ) || box.isOnBorder(
+                                                        offset.x, offset.y
+                                                    )
+                                                }
 
-                    else -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Failed to load image",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
+                                                if (tappedBox != null) {
+                                                    Log.d(
+                                                        "ExampleScreen",
+                                                        "Selected box: ${tappedBox.id}"
+                                                    )
+                                                    activeBoxId = tappedBox.id
+                                                } else {
+                                                    // Deselect if tapping empty area
+                                                    Log.d("ExampleScreen", "Deselected")
+                                                    activeBoxId = null
+                                                }
+                                            }
+                                        }
+                                        .pointerInput("drag") {
+                                            detectDragGestures(onDragStart = { offset ->
+                                                Log.d(
+                                                    "ExampleScreen",
+                                                    "Drag start at: (${offset.x}, ${offset.y})"
+                                                )
+
+                                                // Find which box we're dragging
+                                                val draggedBox =
+                                                    boundingBoxes.find { it.id == activeBoxId }
+
+                                                if (draggedBox != null) {
+                                                    // Check if on delete button - don't allow dragging from there
+                                                    if (draggedBox.isOnDeleteButton(
+                                                            offset.x, offset.y
+                                                        )
+                                                    ) {
+                                                        // Delete button click handled by tap gesture, ignore drag
+                                                        return@detectDragGestures
+                                                    }
+
+                                                    // Check if starting a resize or move
+                                                    val corner = draggedBox.getCornerHandle(
+                                                        offset.x, offset.y
+                                                    )
+                                                    if (corner != null) {
+                                                        Log.d(
+                                                            "ExampleScreen",
+                                                            "Resizing corner: $corner"
+                                                        )
+                                                        resizingCorner = corner
+                                                    } else if (draggedBox.contains(
+                                                            offset.x, offset.y
+                                                        )
+                                                    ) {
+                                                        Log.d("ExampleScreen", "Moving box")
+                                                        isDragging = true
+                                                    }
+                                                }
+                                            }, onDrag = { _, dragAmount ->
+                                                val boxIndex =
+                                                    boundingBoxes.indexOfFirst { it.id == activeBoxId }
+                                                if (boxIndex != -1) {
+                                                    val activeBox = boundingBoxes[boxIndex]
+
+                                                    // Create new box with updated coordinates to trigger recomposition
+                                                    val updatedBox = if (resizingCorner != null) {
+                                                        // Resize the box (no TOP_RIGHT since it's the delete button)
+                                                        when (resizingCorner) {
+                                                            BoundingBox.Corner.TOP_LEFT -> {
+                                                                activeBox.copy(
+                                                                    left = (activeBox.left + dragAmount.x).coerceAtMost(
+                                                                        activeBox.right - 50f
+                                                                    ).coerceIn(
+                                                                        imageDisplayBounds.left,
+                                                                        imageDisplayBounds.right
+                                                                    ),
+                                                                    top = (activeBox.top + dragAmount.y).coerceAtMost(
+                                                                        activeBox.bottom - 50f
+                                                                    ).coerceIn(
+                                                                        imageDisplayBounds.top,
+                                                                        imageDisplayBounds.bottom
+                                                                    )
+                                                                )
+                                                            }
+
+                                                            BoundingBox.Corner.BOTTOM_LEFT -> {
+                                                                activeBox.copy(
+                                                                    left = (activeBox.left + dragAmount.x).coerceAtMost(
+                                                                        activeBox.right - 50f
+                                                                    ).coerceIn(
+                                                                        imageDisplayBounds.left,
+                                                                        imageDisplayBounds.right
+                                                                    ),
+                                                                    bottom = (activeBox.bottom + dragAmount.y).coerceAtLeast(
+                                                                        activeBox.top + 50f
+                                                                    ).coerceIn(
+                                                                        imageDisplayBounds.top,
+                                                                        imageDisplayBounds.bottom
+                                                                    )
+                                                                )
+                                                            }
+
+                                                            BoundingBox.Corner.BOTTOM_RIGHT -> {
+                                                                activeBox.copy(
+                                                                    right = (activeBox.right + dragAmount.x).coerceAtLeast(
+                                                                        activeBox.left + 50f
+                                                                    ).coerceIn(
+                                                                        imageDisplayBounds.left,
+                                                                        imageDisplayBounds.right
+                                                                    ),
+                                                                    bottom = (activeBox.bottom + dragAmount.y).coerceAtLeast(
+                                                                        activeBox.top + 50f
+                                                                    ).coerceIn(
+                                                                        imageDisplayBounds.top,
+                                                                        imageDisplayBounds.bottom
+                                                                    )
+                                                                )
+                                                            }
+
+                                                            else -> activeBox
+                                                        }
+                                                    } else if (isDragging) {
+                                                        // Move the box
+                                                        val boxWidth =
+                                                            activeBox.right - activeBox.left
+                                                        val boxHeight =
+                                                            activeBox.bottom - activeBox.top
+
+                                                        val newLeft =
+                                                            (activeBox.left + dragAmount.x).coerceIn(
+                                                                imageDisplayBounds.left,
+                                                                imageDisplayBounds.right - boxWidth
+                                                            )
+                                                        val newTop =
+                                                            (activeBox.top + dragAmount.y).coerceIn(
+                                                                imageDisplayBounds.top,
+                                                                imageDisplayBounds.bottom - boxHeight
+                                                            )
+
+                                                        activeBox.copy(
+                                                            left = newLeft,
+                                                            top = newTop,
+                                                            right = newLeft + boxWidth,
+                                                            bottom = newTop + boxHeight
+                                                        )
+                                                    } else {
+                                                        activeBox
+                                                    }
+
+                                                    // Replace the box in the list to trigger recomposition
+                                                    boundingBoxes[boxIndex] = updatedBox
+                                                }
+                                            }, onDragEnd = {
+                                                Log.d("ExampleScreen", "Drag ended")
+                                                isDragging = false
+                                                resizingCorner = null
+                                            })
+                                        })
+                            }
+                        }
+
+                        else -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Failed to load image",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            // Spacer above FAB
-            Spacer(modifier = Modifier.weight(1f))
+                // Spacer above FAB
+                Spacer(modifier = Modifier.weight(1f))
 
-            // Annotation FAB - centered between image and bottom
-            Box(
-                modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center
-            ) {
-                FloatingActionButton(
-                    onClick = {
-                        // Add new bounding box in center of actual image display area
-                        Log.d(
-                            "ExampleScreen",
-                            "FAB clicked. ImageDisplayBounds: $imageDisplayBounds"
-                        )
-                        if (imageDisplayBounds != Rect.Zero) {
-                            val boxSize = 200f.coerceAtMost(
-                                imageDisplayBounds.width * 0.5f
-                            ).coerceAtMost(
-                                imageDisplayBounds.height * 0.5f
-                            )
-                            val centerX = imageDisplayBounds.center.x
-                            val centerY = imageDisplayBounds.center.y
-
-                            val newBox = BoundingBox(
-                                left = centerX - boxSize / 2,
-                                top = centerY - boxSize / 2,
-                                right = centerX + boxSize / 2,
-                                bottom = centerY + boxSize / 2
-                            )
-                            boundingBoxes.add(newBox)
-                            activeBoxId = newBox.id
+                // Annotation FAB - centered between image and bottom
+                Box(
+                    modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center
+                ) {
+                    FloatingActionButton(
+                        onClick = {
+                            // Add new bounding box in center of actual image display area
                             Log.d(
                                 "ExampleScreen",
-                                "Added box: left=${newBox.left}, top=${newBox.top}, right=${newBox.right}, bottom=${newBox.bottom}"
+                                "FAB clicked. ImageDisplayBounds: $imageDisplayBounds"
                             )
-                            Log.d("ExampleScreen", "Total boxes: ${boundingBoxes.size}")
-                        } else {
-                            Log.d("ExampleScreen", "ImageDisplayBounds is Zero!")
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(64.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add bounding box",
-                        modifier = Modifier.size(32.dp)
-                    )
+                            if (imageDisplayBounds != Rect.Zero) {
+                                val boxSize = 200f.coerceAtMost(
+                                    imageDisplayBounds.width * 0.5f
+                                ).coerceAtMost(
+                                    imageDisplayBounds.height * 0.5f
+                                )
+                                val centerX = imageDisplayBounds.center.x
+                                val centerY = imageDisplayBounds.center.y
+
+                                val newBox = BoundingBox(
+                                    left = centerX - boxSize / 2,
+                                    top = centerY - boxSize / 2,
+                                    right = centerX + boxSize / 2,
+                                    bottom = centerY + boxSize / 2
+                                )
+                                boundingBoxes.add(newBox)
+                                activeBoxId = newBox.id
+                                Log.d(
+                                    "ExampleScreen",
+                                    "Added box: left=${newBox.left}, top=${newBox.top}, right=${newBox.right}, bottom=${newBox.bottom}"
+                                )
+                                Log.d("ExampleScreen", "Total boxes: ${boundingBoxes.size}")
+                            } else {
+                                Log.d("ExampleScreen", "ImageDisplayBounds is Zero!")
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(64.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add bounding box",
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
+
+                // Spacer below FAB
+                Spacer(modifier = Modifier.weight(1f))
             }
 
-            // Spacer below FAB
-            Spacer(modifier = Modifier.weight(1f))
-            }
-            
             // Delete message overlay (outside Column, on top of everything)
             deleteMessage?.let { message ->
                 Box(
