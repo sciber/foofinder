@@ -68,7 +68,8 @@ private const val TAG = "DetectorScreen"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetectorScreen(
-    onNavigateToImageViewer: (imageUri: String, fileName: String) -> Unit = { _, _ -> }
+    onNavigateToImageViewer: (imageUri: String, fileName: String) -> Unit = { _, _ -> },
+    onNavigateToDataset: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -329,7 +330,8 @@ fun DetectorScreen(
                 DetectorTopBar(
                     isTorchEnabled = isTorchEnabled,
                     isTorchAvailable = isTorchAvailable,
-                    onToggleTorch = toggleTorch
+                    onToggleTorch = toggleTorch,
+                    onDatasetClick = onNavigateToDataset
                 )
 
                 Box(

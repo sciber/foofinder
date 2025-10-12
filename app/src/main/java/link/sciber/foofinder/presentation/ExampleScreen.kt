@@ -73,11 +73,11 @@ fun ExampleScreen(
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
 
-    // Bounding box state
-    val boundingBoxes = remember { mutableStateListOf<AnnotationBox>() }
-    var activeBoxId by remember { mutableStateOf<String?>(null) }
-    var imageViewSize by remember { mutableStateOf(IntSize.Zero) }
-    var imageDisplayBounds by remember { mutableStateOf(Rect.Zero) }
+    // Bounding box state - keyed to imageUri to reset when viewing different images
+    val boundingBoxes = remember(imageUri) { mutableStateListOf<AnnotationBox>() }
+    var activeBoxId by remember(imageUri) { mutableStateOf<String?>(null) }
+    var imageViewSize by remember(imageUri) { mutableStateOf(IntSize.Zero) }
+    var imageDisplayBounds by remember(imageUri) { mutableStateOf(Rect.Zero) }
 
     // UI state
     var deleteMessage by remember { mutableStateOf<String?>(null) }
@@ -86,7 +86,8 @@ fun ExampleScreen(
 
     // Save annotations and navigate back
     fun saveAnnotationsAndNavigateBack() {
-        if (bitmap != null && imageDisplayBounds != Rect.Zero && boundingBoxes.isNotEmpty()) {
+        // Always save annotations (even if empty) to handle deletions
+        if (bitmap != null && imageDisplayBounds != Rect.Zero) {
             try {
                 AnnotationStorageManager.saveAnnotations(
                     context = context,
@@ -140,6 +141,34 @@ fun ExampleScreen(
                 bitmap!!.width,
                 bitmap!!.height
             )
+        }
+    }
+
+    // Load existing annotations when image and bounds are ready
+    LaunchedEffect(imageUri, bitmap, imageDisplayBounds) {
+        if (bitmap != null && imageDisplayBounds != Rect.Zero) {
+            // Clear any existing boxes first
+            boundingBoxes.clear()
+
+            val loadedBoxes = withContext(Dispatchers.IO) {
+                try {
+                    AnnotationStorageManager.loadAnnotations(
+                        context = context,
+                        fileName = fileName,
+                        imageWidth = bitmap!!.width,
+                        imageHeight = bitmap!!.height,
+                        displayLeft = imageDisplayBounds.left,
+                        displayTop = imageDisplayBounds.top,
+                        displayWidth = imageDisplayBounds.width,
+                        displayHeight = imageDisplayBounds.height
+                    )
+                } catch (e: Exception) {
+                    Log.e("ExampleScreen", "Failed to load annotations", e)
+                    emptyList()
+                }
+            }
+            boundingBoxes.addAll(loadedBoxes)
+            Log.d("ExampleScreen", "Loaded ${loadedBoxes.size} annotations")
         }
     }
 
@@ -266,8 +295,7 @@ fun ExampleScreen(
                                 )
                             } else {
                                 Log.w(
-                                    "ExampleScreen",
-                                    "ImageDisplayBounds is Zero - cannot add box"
+                                    "ExampleScreen", "ImageDisplayBounds is Zero - cannot add box"
                                 )
                             }
                         },

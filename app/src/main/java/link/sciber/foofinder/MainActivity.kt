@@ -19,6 +19,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import link.sciber.foofinder.presentation.DatasetScreen
 import link.sciber.foofinder.presentation.DetectorScreen
 import link.sciber.foofinder.presentation.ExampleScreen
 import link.sciber.foofinder.ui.theme.FooFinderTheme
@@ -66,19 +67,40 @@ fun FooFinderNavigation() {
         navController = navController, startDestination = "detector"
     ) {
         composable("detector") {
-            DetectorScreen(
-                onNavigateToImageViewer = { imageUri, fileName ->
-                    val encodedUri = Uri.encode(imageUri)
-                    val encodedFileName = Uri.encode(fileName)
-                    navController.navigate("image_viewer/$encodedUri/$encodedFileName")
-                })
+            DetectorScreen(onNavigateToImageViewer = { imageUri, fileName ->
+                val encodedUri = Uri.encode(imageUri)
+                val encodedFileName = Uri.encode(fileName)
+                navController.navigate("image_viewer/$encodedUri/$encodedFileName") {
+                    launchSingleTop = true
+                }
+            }, onNavigateToDataset = {
+                navController.navigate("dataset") {
+                    launchSingleTop = true
+                }
+            })
+        }
+
+        composable("dataset") {
+            DatasetScreen(onNavigateToExample = { imageUri, fileName ->
+                val encodedUri = Uri.encode(imageUri)
+                val encodedFileName = Uri.encode(fileName)
+                navController.navigate("image_viewer/$encodedUri/$encodedFileName") {
+                    launchSingleTop = true
+                }
+            }, onNavigateToDetector = {
+                // Safe pop back to detector - only pop if not already at start
+                if (navController.currentBackStackEntry?.destination?.route != "detector") {
+                    navController.popBackStack("detector", inclusive = false)
+                }
+            })
         }
 
         composable(
             route = "image_viewer/{imageUri}/{fileName}",
             arguments = listOf(
                 navArgument("imageUri") { type = NavType.StringType },
-                navArgument("fileName") { type = NavType.StringType })) { backStackEntry ->
+                navArgument("fileName") { type = NavType.StringType })
+        ) { backStackEntry ->
             val imageUri = backStackEntry.arguments?.getString("imageUri")
             val fileName = backStackEntry.arguments?.getString("fileName")
 
