@@ -8,13 +8,14 @@ import android.util.Log
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -50,51 +51,58 @@ fun AnnotationTopBar(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    CenterAlignedTopAppBar(
-        title = { Text(fileName.substringBeforeLast(".")) }, navigationIcon = {
-        IconButton(
-            onClick = {
-                if (!isNavigatingBack) {
-                    onIsNavigatingBackChange(true)
-                    onNavigateBack()
-                }
-            }, enabled = !isNavigatingBack
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back"
+    TopAppBar(
+        navigationIcon = {
+            IconButton(
+                onClick = {
+                    if (!isNavigatingBack) {
+                        onIsNavigatingBackChange(true)
+                        onNavigateBack()
+                    }
+                }, enabled = !isNavigatingBack
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back"
+                )
+            }
+        },
+        title = {
+            Text(
+                text = fileName.substringBeforeLast("."),
+                fontWeight = FontWeight.SemiBold
             )
-        }
-    }, actions = {
-        // Delete image and annotation button
-        IconButton(
-            onClick = {
-                if (!isDeleting) {
-                    onIsDeletingChange(true)
-                    handleImageDeletion(
-                        context = context,
-                        imageUri = imageUri,
-                        fileName = fileName,
-                        onDeleteMessage = onDeleteMessage,
-                        onDeleteComplete = {
-                            scope.launch {
-                                kotlinx.coroutines.delay(500)
-                                onDeleteComplete()
-                            }
-                        },
-                        onError = { onIsDeletingChange(false) })
-                }
-            }, enabled = !isDeleting
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "Delete image and annotations",
-                tint = MaterialTheme.colorScheme.error
-            )
-        }
-    }, colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-    )
+        },
+        actions = {
+            // Delete image and annotation button
+            IconButton(
+                onClick = {
+                    if (!isDeleting) {
+                        onIsDeletingChange(true)
+                        handleImageDeletion(
+                            context = context,
+                            imageUri = imageUri,
+                            fileName = fileName,
+                            onDeleteMessage = onDeleteMessage,
+                            onDeleteComplete = {
+                                scope.launch {
+                                    kotlinx.coroutines.delay(500)
+                                    onDeleteComplete()
+                                }
+                            },
+                            onError = { onIsDeletingChange(false) })
+                    }
+                }, enabled = !isDeleting
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete image and annotations",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.background
+        )
     )
 }
 

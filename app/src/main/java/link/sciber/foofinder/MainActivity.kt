@@ -22,7 +22,7 @@ import androidx.navigation.navArgument
 import link.sciber.foofinder.presentation.DatasetScreen
 import link.sciber.foofinder.presentation.DetectorScreen
 import link.sciber.foofinder.presentation.ExampleScreen
-import link.sciber.foofinder.ui.theme.FooFinderTheme
+import link.sciber.foofinder.ui.theme.AppTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            FooFinderTheme {
+            AppTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
                 ) {

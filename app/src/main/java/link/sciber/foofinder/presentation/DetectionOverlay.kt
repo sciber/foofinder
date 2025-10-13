@@ -4,6 +4,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -19,11 +20,10 @@ import androidx.compose.ui.unit.sp
 import link.sciber.foofinder.domain.BoundingBox
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
+import link.sciber.foofinder.ui.theme.boundingBoxActive
 
-val DETECTION_AREA_COLOR: Color = Color.Cyan
-const val DETECTION_AREA_STROKE_WIDTH: Float = 4f
-val FOO_CLASS_BOUNDING_BOX_COLOR: Color = Color.Blue
-const val FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 4f
+const val DETECTION_AREA_STROKE_WIDTH: Float = 6f
+const val FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 6f
 val NOT_FOO_CLASS_BOUNDING_BOX_COLOR: Color = Color.Magenta
 const val NOT_FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH: Float = 2f
 val OTHER_CLASS_BOUNDING_BOX_COLOR: Color = Color.Red
@@ -43,6 +43,8 @@ fun DetectionOverlay(
     val labelPaddingPx = with(density) { 4.dp.toPx() } // internal text padding only
     val labelCornerRadiusPx = with(density) { 4.dp.toPx() }
 
+    val primaryColor = MaterialTheme.colorScheme.primary
+    
     Canvas(modifier = modifier) {
         val renderStart = System.nanoTime()
 
@@ -65,9 +67,9 @@ fun DetectionOverlay(
         // Transform detection area coordinates
         val scaledArea = scaleDetectionArea(detection.area, scaleX, scaleY)
 
-        // Detection area
+        // Detection area - use primary color
         drawRect(
-            color = DETECTION_AREA_COLOR,
+            color = primaryColor,
             topLeft = Offset(scaledArea.startX, scaledArea.startY),
             size = Size(scaledArea.width, scaledArea.height),
             style = Stroke(width = DETECTION_AREA_STROKE_WIDTH)
@@ -78,7 +80,7 @@ fun DetectionOverlay(
             val scaledBox = scaleBoundingBox(box, scaleX, scaleY)
 
             val boundingBoxColor = when (scaledBox.classId) {
-                0 -> FOO_CLASS_BOUNDING_BOX_COLOR
+                0 -> boundingBoxActive
                 1 -> NOT_FOO_CLASS_BOUNDING_BOX_COLOR
                 else -> OTHER_CLASS_BOUNDING_BOX_COLOR
             }

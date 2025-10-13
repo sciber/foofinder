@@ -297,32 +297,37 @@ fun ExampleScreen(
                 ) {
                     FloatingActionButton(
                         onClick = {
-                            // Add new bounding box in center of image display area
-                            Log.d(
-                                "ExampleScreen",
-                                "FAB clicked. ImageDisplayBounds: $imageDisplayBounds"
-                            )
-                            if (imageDisplayBounds != Rect.Zero) {
-                                val boxSize = 200f.coerceAtMost(imageDisplayBounds.width * 0.5f)
-                                    .coerceAtMost(imageDisplayBounds.height * 0.5f)
-                                val centerX = imageDisplayBounds.center.x
-                                val centerY = imageDisplayBounds.center.y
+                            // Add new bounding box in center of current viewport
+                            if (imageDisplayBounds != Rect.Zero && imageViewSize.width > 0) {
+                                // Calculate viewport center in screen coordinates
+                                val viewportCenterX = imageViewSize.width / 2f
+                                val viewportCenterY = imageViewSize.height / 2f
+
+                                // Transform viewport center to image coordinates
+                                val imageCenterX = (viewportCenterX - imageViewSize.width / 2f - offsetX) / scale + imageViewSize.width / 2f
+                                val imageCenterY = (viewportCenterY - imageViewSize.height / 2f - offsetY) / scale + imageViewSize.height / 2f
+
+                                // Box size is 30% of viewport size (in image coordinates)
+                                val boxSize = (imageViewSize.width * 0.3f / scale).coerceIn(
+                                    10f, // Minimum size
+                                    imageDisplayBounds.width.coerceAtMost(imageDisplayBounds.height)
+                                )
 
                                 val newBox = AnnotationBox(
-                                    left = centerX - boxSize / 2,
-                                    top = centerY - boxSize / 2,
-                                    right = centerX + boxSize / 2,
-                                    bottom = centerY + boxSize / 2
+                                    left = (imageCenterX - boxSize / 2).coerceIn(imageDisplayBounds.left, imageDisplayBounds.right),
+                                    top = (imageCenterY - boxSize / 2).coerceIn(imageDisplayBounds.top, imageDisplayBounds.bottom),
+                                    right = (imageCenterX + boxSize / 2).coerceIn(imageDisplayBounds.left, imageDisplayBounds.right),
+                                    bottom = (imageCenterY + boxSize / 2).coerceIn(imageDisplayBounds.top, imageDisplayBounds.bottom)
                                 )
                                 boundingBoxes.add(newBox)
                                 activeBoxId = newBox.id
                                 Log.d(
                                     "ExampleScreen",
-                                    "Added box: ${newBox.id}. Total: ${boundingBoxes.size}"
+                                    "Added box at viewport center. Scale: $scale, BoxSize: $boxSize"
                                 )
                             } else {
                                 Log.w(
-                                    "ExampleScreen", "ImageDisplayBounds is Zero - cannot add box"
+                                    "ExampleScreen", "Cannot add box - bounds not ready"
                                 )
                             }
                         },

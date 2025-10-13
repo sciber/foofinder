@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import link.sciber.foofinder.domain.AnnotationBox
+import link.sciber.foofinder.ui.theme.boundingBoxActive
+import link.sciber.foofinder.ui.theme.boundingBoxInactive
 
 /**
  * Canvas composable for drawing annotation bounding boxes with interactive handles
@@ -44,9 +46,9 @@ fun BoundingBoxCanvas(
         // Draw all bounding boxes
         boundingBoxes.forEach { box ->
             val isActive = box.id == activeBoxId
-            // Use same blue as detector screen - Color.Blue for active, darker for inactive
-            val strokeColor = if (isActive) Color.Blue else Color(0xFF1565C0)
-            val strokeWidth = 4f
+            // Use bright color for all bounding boxes
+            val strokeColor = boundingBoxActive
+            val strokeWidth = 6f
 
             // Transform box coordinates
             val topLeft = transformCoord(box.left, box.top)
