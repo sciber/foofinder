@@ -25,6 +25,9 @@ import link.sciber.foofinder.domain.AnnotationBox
  * @param imageDisplayBounds Bounds of the actual image display area
  * @param onActiveBoxIdChange Callback when active box changes
  * @param onBoxesChange Callback when boxes are modified
+ * @param scale Current zoom scale factor
+ * @param offsetX Current pan offset X
+ * @param offsetY Current pan offset Y
  * @param modifier Modifier for the layer
  */
 @Composable
@@ -34,23 +37,37 @@ fun BoundingBoxInteractionLayer(
     imageDisplayBounds: Rect,
     onActiveBoxIdChange: (String?) -> Unit,
     onBoxesChange: (List<AnnotationBox>) -> Unit,
+    scale: Float = 1f,
+    offsetX: Float = 0f,
+    offsetY: Float = 0f,
     modifier: Modifier = Modifier
 ) {
     // Key these states to activeBoxId so they reset when switching boxes
     var isDragging by remember(activeBoxId) { mutableStateOf(false) }
     var resizingCorner by remember(activeBoxId) { mutableStateOf<AnnotationBox.Corner?>(null) }
 
+    // Helper function to transform screen coordinates to image coordinates
+    fun transformToImageCoords(screenX: Float, screenY: Float, viewWidth: Float, viewHeight: Float): androidx.compose.ui.geometry.Offset {
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+        val imageX = (screenX - centerX - offsetX) / scale + centerX
+        val imageY = (screenY - centerY - offsetY) / scale + centerY
+        return androidx.compose.ui.geometry.Offset(imageX, imageY)
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Transparent)
-            .pointerInput(boundingBoxes.size, activeBoxId) {
+            .pointerInput(boundingBoxes.size, activeBoxId, scale, offsetX, offsetY) {
                 detectTapGestures { offset ->
-                    Log.d("BoundingBoxInteraction", "Tap at: (${offset.x}, ${offset.y})")
+                    // Transform touch coordinates to image space
+                    val imageCoords = transformToImageCoords(offset.x, offset.y, size.width.toFloat(), size.height.toFloat())
+                    Log.d("BoundingBoxInteraction", "Tap at screen: (${offset.x}, ${offset.y}), image: (${imageCoords.x}, ${imageCoords.y})")
 
                     // Check if tapping delete button on active box
                     val activeBox = boundingBoxes.find { it.id == activeBoxId }
-                    if (activeBox != null && activeBox.isOnDeleteButton(offset.x, offset.y)) {
+                    if (activeBox != null && activeBox.isOnDeleteButton(imageCoords.x, imageCoords.y)) {
                         Log.d(
                             "BoundingBoxInteraction",
                             "Delete button tapped for box: ${activeBox.id}"
@@ -63,7 +80,7 @@ fun BoundingBoxInteractionLayer(
 
                     // Find which box we're tapping
                     val tappedBox = boundingBoxes.findLast { box ->
-                        box.contains(offset.x, offset.y) || box.isOnBorder(offset.x, offset.y)
+                        box.contains(imageCoords.x, imageCoords.y) || box.isOnBorder(imageCoords.x, imageCoords.y)
                     }
 
                     if (tappedBox != null) {
@@ -76,25 +93,27 @@ fun BoundingBoxInteractionLayer(
                     }
                 }
             }
-            .pointerInput(boundingBoxes.size, activeBoxId, imageDisplayBounds) {
+            .pointerInput(boundingBoxes.size, activeBoxId, imageDisplayBounds, scale, offsetX, offsetY) {
                 detectDragGestures(onDragStart = { offset ->
-                    Log.d("BoundingBoxInteraction", "Drag start at: (${offset.x}, ${offset.y})")
+                    // Transform touch coordinates to image space
+                    val imageCoords = transformToImageCoords(offset.x, offset.y, size.width.toFloat(), size.height.toFloat())
+                    Log.d("BoundingBoxInteraction", "Drag start at screen: (${offset.x}, ${offset.y}), image: (${imageCoords.x}, ${imageCoords.y})")
 
                     // Find which box we're dragging
                     val draggedBox = boundingBoxes.find { it.id == activeBoxId }
 
                     if (draggedBox != null) {
                         // Check if on delete button - don't allow dragging from there
-                        if (draggedBox.isOnDeleteButton(offset.x, offset.y)) {
+                        if (draggedBox.isOnDeleteButton(imageCoords.x, imageCoords.y)) {
                             return@detectDragGestures
                         }
 
                         // Check if starting a resize or move
-                        val corner = draggedBox.getCornerHandle(offset.x, offset.y)
+                        val corner = draggedBox.getCornerHandle(imageCoords.x, imageCoords.y)
                         if (corner != null) {
                             Log.d("BoundingBoxInteraction", "Resizing corner: $corner")
                             resizingCorner = corner
-                        } else if (draggedBox.contains(offset.x, offset.y)) {
+                        } else if (draggedBox.contains(imageCoords.x, imageCoords.y)) {
                             Log.d("BoundingBoxInteraction", "Moving box")
                             isDragging = true
                         }
@@ -104,16 +123,22 @@ fun BoundingBoxInteractionLayer(
                     if (boxIndex != -1) {
                         val activeBox = boundingBoxes[boxIndex]
 
+                        // Scale drag amount inversely to account for zoom
+                        val scaledDragAmount = androidx.compose.ui.geometry.Offset(
+                            dragAmount.x / scale,
+                            dragAmount.y / scale
+                        )
+
                         // Create new box with updated coordinates
                         val updatedBox = when {
                             resizingCorner != null -> {
                                 resizeBox(
-                                    activeBox, resizingCorner!!, dragAmount, imageDisplayBounds
+                                    activeBox, resizingCorner!!, scaledDragAmount, imageDisplayBounds
                                 )
                             }
 
                             isDragging -> {
-                                moveBox(activeBox, dragAmount, imageDisplayBounds)
+                                moveBox(activeBox, scaledDragAmount, imageDisplayBounds)
                             }
 
                             else -> activeBox
@@ -143,27 +168,27 @@ private fun resizeBox(
     return when (corner) {
         AnnotationBox.Corner.TOP_LEFT -> {
             box.copy(
-                left = (box.left + dragAmount.x).coerceAtMost(box.right - 50f)
+                left = (box.left + dragAmount.x).coerceAtMost(box.right - 10f)
                     .coerceIn(bounds.left, bounds.right),
-                top = (box.top + dragAmount.y).coerceAtMost(box.bottom - 50f)
+                top = (box.top + dragAmount.y).coerceAtMost(box.bottom - 10f)
                     .coerceIn(bounds.top, bounds.bottom)
             )
         }
 
         AnnotationBox.Corner.BOTTOM_LEFT -> {
             box.copy(
-                left = (box.left + dragAmount.x).coerceAtMost(box.right - 50f)
+                left = (box.left + dragAmount.x).coerceAtMost(box.right - 10f)
                     .coerceIn(bounds.left, bounds.right),
-                bottom = (box.bottom + dragAmount.y).coerceAtLeast(box.top + 50f)
+                bottom = (box.bottom + dragAmount.y).coerceAtLeast(box.top + 10f)
                     .coerceIn(bounds.top, bounds.bottom)
             )
         }
 
         AnnotationBox.Corner.BOTTOM_RIGHT -> {
             box.copy(
-                right = (box.right + dragAmount.x).coerceAtLeast(box.left + 50f)
+                right = (box.right + dragAmount.x).coerceAtLeast(box.left + 10f)
                     .coerceIn(bounds.left, bounds.right),
-                bottom = (box.bottom + dragAmount.y).coerceAtLeast(box.top + 50f)
+                bottom = (box.bottom + dragAmount.y).coerceAtLeast(box.top + 10f)
                     .coerceIn(bounds.top, bounds.bottom)
             )
         }

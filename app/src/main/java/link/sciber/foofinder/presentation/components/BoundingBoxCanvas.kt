@@ -16,31 +16,56 @@ import link.sciber.foofinder.domain.AnnotationBox
  *
  * @param boundingBoxes List of annotation boxes to draw
  * @param activeBoxId ID of the currently selected box (if any)
+ * @param scale Current zoom scale factor
+ * @param offsetX Current pan offset X
+ * @param offsetY Current pan offset Y
  * @param modifier Modifier for the canvas
  */
 @Composable
 fun BoundingBoxCanvas(
-    boundingBoxes: List<AnnotationBox>, activeBoxId: String?, modifier: Modifier = Modifier
+    boundingBoxes: List<AnnotationBox>,
+    activeBoxId: String?,
+    scale: Float = 1f,
+    offsetX: Float = 0f,
+    offsetY: Float = 0f,
+    modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f
+
+        // Helper function to transform coordinates
+        fun transformCoord(x: Float, y: Float): Offset {
+            val scaledX = (x - centerX) * scale + centerX + offsetX
+            val scaledY = (y - centerY) * scale + centerY + offsetY
+            return Offset(scaledX, scaledY)
+        }
+
         // Draw all bounding boxes
         boundingBoxes.forEach { box ->
             val isActive = box.id == activeBoxId
-            val strokeColor = if (isActive) Color(0xFF64B5F6) else Color(0xFF1976D2)
-            val strokeWidth = if (isActive) 5f else 3f
+            // Use same blue as detector screen - Color.Blue for active, darker for inactive
+            val strokeColor = if (isActive) Color.Blue else Color(0xFF1565C0)
+            val strokeWidth = 4f
+
+            // Transform box coordinates
+            val topLeft = transformCoord(box.left, box.top)
+            val topRight = transformCoord(box.right, box.top)
+            val bottomLeft = transformCoord(box.left, box.bottom)
+            val bottomRight = transformCoord(box.right, box.bottom)
 
             // Draw box outline
             drawRect(
                 color = strokeColor,
-                topLeft = Offset(box.left, box.top),
-                size = Size(box.right - box.left, box.bottom - box.top),
+                topLeft = topLeft,
+                size = Size(bottomRight.x - topLeft.x, bottomRight.y - topLeft.y),
                 style = Stroke(width = strokeWidth)
             )
 
             // Draw corner handles and delete button for active box
             if (box.id == activeBoxId) {
-                drawCornerHandles(box)
-                drawDeleteButton(box)
+                drawCornerHandles(topLeft, bottomLeft, bottomRight)
+                drawDeleteButton(topRight)
             }
         }
     }
@@ -49,13 +74,13 @@ fun BoundingBoxCanvas(
 /**
  * Draw corner handles for resizing (3 corners - top-right is reserved for delete button)
  */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCornerHandles(box: AnnotationBox) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCornerHandles(
+    topLeft: Offset,
+    bottomLeft: Offset,
+    bottomRight: Offset
+) {
     val handleSize = 15f
-    val corners = listOf(
-        Offset(box.left, box.top),        // Top-left
-        Offset(box.left, box.bottom),     // Bottom-left
-        Offset(box.right, box.bottom)     // Bottom-right
-    )
+    val corners = listOf(topLeft, bottomLeft, bottomRight)
 
     corners.forEach { corner ->
         // Handle background
@@ -75,16 +100,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCornerHandles(b
 /**
  * Draw delete button at top-right corner
  */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDeleteButton(box: AnnotationBox) {
-    val deleteButtonX = box.right
-    val deleteButtonY = box.top
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDeleteButton(topRight: Offset) {
     val deleteButtonRadius = 18f
 
     // Delete button background
     drawCircle(
         color = Color(0xFFFF5252),
         radius = deleteButtonRadius,
-        center = Offset(deleteButtonX, deleteButtonY),
+        center = topRight,
         style = Fill
     )
 
@@ -92,7 +115,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDeleteButton(bo
     drawCircle(
         color = Color.White,
         radius = deleteButtonRadius,
-        center = Offset(deleteButtonX, deleteButtonY),
+        center = topRight,
         style = Stroke(width = 2f)
     )
 
@@ -100,14 +123,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDeleteButton(bo
     val xSize = 7f
     drawLine(
         color = Color.White,
-        start = Offset(deleteButtonX - xSize, deleteButtonY - xSize),
-        end = Offset(deleteButtonX + xSize, deleteButtonY + xSize),
+        start = Offset(topRight.x - xSize, topRight.y - xSize),
+        end = Offset(topRight.x + xSize, topRight.y + xSize),
         strokeWidth = 3f
     )
     drawLine(
         color = Color.White,
-        start = Offset(deleteButtonX + xSize, deleteButtonY - xSize),
-        end = Offset(deleteButtonX - xSize, deleteButtonY + xSize),
+        start = Offset(topRight.x + xSize, topRight.y - xSize),
+        end = Offset(topRight.x - xSize, topRight.y + xSize),
         strokeWidth = 3f
     )
 }

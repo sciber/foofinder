@@ -34,7 +34,7 @@ data class AnnotationBox(
      * Get which corner handle is being touched (if any)
      * Top-right corner is reserved for the delete button
      */
-    fun getCornerHandle(x: Float, y: Float, handleSize: Float = 30f): Corner? {
+    fun getCornerHandle(x: Float, y: Float, handleSize: Float = 20f): Corner? {
         val topLeft =
             x >= left - handleSize && x <= left + handleSize && y >= top - handleSize && y <= top + handleSize
         val bottomLeft =

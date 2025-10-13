@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -68,10 +70,10 @@ fun ExampleScreen(
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Zoom and pan state
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
+    // Zoom and pan state - reset when image changes
+    var scale by remember(imageUri) { mutableFloatStateOf(1f) }
+    var offsetX by remember(imageUri) { mutableFloatStateOf(0f) }
+    var offsetY by remember(imageUri) { mutableFloatStateOf(0f) }
 
     // Bounding box state - keyed to imageUri to reset when viewing different images
     val boundingBoxes = remember(imageUri) { mutableStateListOf<AnnotationBox>() }
@@ -208,6 +210,22 @@ fun ExampleScreen(
                         }
 
                         bitmap != null -> {
+                            // Transformable state for pinch-to-zoom and pan
+                            val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+                                // Update scale with limits
+                                val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+                                scale = newScale
+
+                                // Update pan offset
+                                offsetX += panChange.x
+                                offsetY += panChange.y
+
+                                // Constrain pan within reasonable bounds
+                                val maxOffset = imageViewSize.width * (scale - 1f) / 2f
+                                offsetX = offsetX.coerceIn(-maxOffset, maxOffset)
+                                offsetY = offsetY.coerceIn(-maxOffset, maxOffset)
+                            }
+
                             // Fixed square viewport with zoom and pan
                             Box(
                                 modifier = Modifier
@@ -215,7 +233,9 @@ fun ExampleScreen(
                                     .clipToBounds()
                                     .onSizeChanged { size ->
                                         imageViewSize = size
-                                    }) {
+                                    }
+                                    .transformable(state = transformableState)
+                            ) {
                                 // Image with zoom and pan support
                                 Image(
                                     bitmap = bitmap!!.asImageBitmap(),
@@ -231,9 +251,13 @@ fun ExampleScreen(
                                     contentScale = ContentScale.Fit
                                 )
 
-                                // Bounding box canvas overlay
+                                // Bounding box canvas overlay with coordinate transformation
                                 BoundingBoxCanvas(
-                                    boundingBoxes = boundingBoxes, activeBoxId = activeBoxId
+                                    boundingBoxes = boundingBoxes,
+                                    activeBoxId = activeBoxId,
+                                    scale = scale,
+                                    offsetX = offsetX,
+                                    offsetY = offsetY
                                 )
 
                                 // Interaction layer for tap and drag gestures
@@ -242,7 +266,11 @@ fun ExampleScreen(
                                     activeBoxId = activeBoxId,
                                     imageDisplayBounds = imageDisplayBounds,
                                     onActiveBoxIdChange = { activeBoxId = it },
-                                    onBoxesChange = { /* Trigger recomposition */ })
+                                    onBoxesChange = { /* Trigger recomposition */ },
+                                    scale = scale,
+                                    offsetX = offsetX,
+                                    offsetY = offsetY
+                                )
                             }
                         }
 
