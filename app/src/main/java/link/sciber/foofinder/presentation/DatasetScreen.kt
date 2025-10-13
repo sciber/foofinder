@@ -1,6 +1,7 @@
 package link.sciber.foofinder.presentation
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,15 +33,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import link.sciber.foofinder.R
+import link.sciber.foofinder.domain.AnnotationBox
+import link.sciber.foofinder.ui.theme.boundingBoxActive
+import link.sciber.foofinder.utils.AnnotationStorageManager
+import link.sciber.foofinder.utils.ImageBoundsCalculator
 import link.sciber.foofinder.utils.ImageStorageManager
 import link.sciber.foofinder.utils.SavedImage
 
@@ -159,7 +170,7 @@ fun DatasetScreen(
 }
 
 /**
- * Thumbnail composable for a saved image
+ * Thumbnail composable for a saved image with object indicators
  */
 @Composable
 private fun ImageThumbnail(
@@ -169,6 +180,9 @@ private fun ImageThumbnail(
     var thumbnail by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var lastClickTime by remember { mutableLongStateOf(0L) }
+    var thumbnailSize by remember { mutableStateOf(IntSize.Zero) }
+    var imageDisplayBounds by remember { mutableStateOf(Rect.Zero) }
+    var annotationBoxes by remember { mutableStateOf<List<AnnotationBox>>(emptyList()) }
 
     // Load thumbnail
     LaunchedEffect(savedImage.uri) {
@@ -199,6 +213,54 @@ private fun ImageThumbnail(
         isLoading = false
     }
 
+    // Calculate image bounds when size or thumbnail changes
+    LaunchedEffect(thumbnailSize, thumbnail) {
+        if (thumbnailSize.width > 0 && thumbnailSize.height > 0 && thumbnail != null) {
+            imageDisplayBounds = ImageBoundsCalculator.calculateImageBounds(
+                thumbnailSize.width.toFloat(),
+                thumbnailSize.height.toFloat(),
+                thumbnail!!.width,
+                thumbnail!!.height
+            )
+        }
+    }
+
+    // Load annotations when image and bounds are ready
+    LaunchedEffect(savedImage.uri, thumbnail, imageDisplayBounds) {
+        if (thumbnail != null && imageDisplayBounds != Rect.Zero) {
+            annotationBoxes = withContext(Dispatchers.IO) {
+                try {
+                    // Load full-resolution image dimensions for accurate annotation scaling
+                    val fullImageBitmap = context.contentResolver.openInputStream(savedImage.uri)?.use { stream ->
+                        BitmapFactory.decodeStream(stream)
+                    }
+
+                    fullImageBitmap?.let { fullBitmap ->
+                        val boxes = AnnotationStorageManager.loadAnnotations(
+                            context = context,
+                            fileName = savedImage.displayName,
+                            imageWidth = fullBitmap.width,
+                            imageHeight = fullBitmap.height,
+                            displayLeft = imageDisplayBounds.left,
+                            displayTop = imageDisplayBounds.top,
+                            displayWidth = imageDisplayBounds.width,
+                            displayHeight = imageDisplayBounds.height
+                        )
+                        fullBitmap.recycle()
+                        boxes
+                    } ?: emptyList()
+                } catch (e: Exception) {
+                    android.util.Log.e(
+                        "DatasetScreen",
+                        "Failed to load annotations for ${savedImage.displayName}",
+                        e
+                    )
+                    emptyList()
+                }
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .aspectRatio(1f)
@@ -223,9 +285,27 @@ private fun ImageThumbnail(
                 Image(
                     bitmap = thumbnail!!.asImageBitmap(),
                     contentDescription = savedImage.displayName,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { size ->
+                            thumbnailSize = size
+                        },
                     contentScale = ContentScale.Crop
                 )
+
+                // Draw object indicators as filled rectangles
+                if (annotationBoxes.isNotEmpty()) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        annotationBoxes.forEach { box ->
+                            drawRect(
+                                color = boundingBoxActive,
+                                topLeft = Offset(box.left, box.top),
+                                size = Size(box.right - box.left, box.bottom - box.top),
+                                style = Fill
+                            )
+                        }
+                    }
+                }
             }
 
             else -> {
