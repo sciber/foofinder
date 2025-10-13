@@ -37,11 +37,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -210,22 +210,6 @@ fun ExampleScreen(
                         }
 
                         bitmap != null -> {
-                            // Transformable state for pinch-to-zoom and pan
-                            val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-                                // Update scale with limits
-                                val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-                                scale = newScale
-
-                                // Update pan offset
-                                offsetX += panChange.x
-                                offsetY += panChange.y
-
-                                // Constrain pan within reasonable bounds
-                                val maxOffset = imageViewSize.width * (scale - 1f) / 2f
-                                offsetX = offsetX.coerceIn(-maxOffset, maxOffset)
-                                offsetY = offsetY.coerceIn(-maxOffset, maxOffset)
-                            }
-
                             // Fixed square viewport with zoom and pan
                             Box(
                                 modifier = Modifier
@@ -234,7 +218,22 @@ fun ExampleScreen(
                                     .onSizeChanged { size ->
                                         imageViewSize = size
                                     }
-                                    .transformable(state = transformableState)
+                                    .pointerInput(Unit) {
+                                        detectTransformGestures { _, pan, zoom, _ ->
+                                            // Update scale with limits
+                                            val newScale = (scale * zoom).coerceIn(1f, 5f)
+                                            scale = newScale
+
+                                            // Update pan offset
+                                            offsetX += pan.x
+                                            offsetY += pan.y
+
+                                            // Constrain pan within reasonable bounds
+                                            val maxOffset = size.width * (scale - 1f) / 2f
+                                            offsetX = offsetX.coerceIn(-maxOffset, maxOffset)
+                                            offsetY = offsetY.coerceIn(-maxOffset, maxOffset)
+                                        }
+                                    }
                             ) {
                                 // Image with zoom and pan support
                                 Image(
