@@ -26,7 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -71,6 +73,17 @@ fun CameraPreview(
             }
         }
         onTileCaptureRequesterChange(requester)
+    }
+
+    // Compute the center tile area in the same way as the analyzer
+    fun computeCenterTileArea(baseSide: Int, tileSize: Int): DetectionArea {
+        val offset = ((baseSide - tileSize) / 2f).coerceAtLeast(0f)
+        return DetectionArea(
+            startX = offset,
+            startY = offset,
+            width = tileSize.toFloat(),
+            height = tileSize.toFloat()
+        )
     }
 
     fun requiresScaledSingle(det: FooDetector?, resolution: Size?): Boolean {
@@ -229,79 +242,112 @@ fun CameraPreview(
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val squareSize = minOf(maxWidth, maxHeight)
+                val squareSizePx = with(LocalDensity.current) { squareSize.toPx() }
 
+                // For CENTERED strategy, compute the static center tile area
+                val isCenteredStrategy = currentScanStrategy == CameraAnalyzer.ScanStrategy.CENTERED
+                val centerTileArea = if (isCenteredStrategy) {
+                    val currentDetector = detector
+                    if (currentDetector != null) {
+                        try {
+                            val modelInputSize = currentDetector.getModelInputSize()
+                            val tileSize = modelInputSize.coerceAtMost(baseSidePx)
+                            computeCenterTileArea(baseSidePx, tileSize)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+                
+                val (previewScale, previewOffsetX, previewOffsetY) = if (centerTileArea != null) {
+                    // Calculate how much to zoom and pan to show only the center tile area
+                    // Work in display pixels, then convert offset to DP
+                    val pxPerBasePx = squareSizePx / baseSidePx.toFloat()
+                    val scale = baseSidePx.toFloat() / centerTileArea.width
+                    
+                    // Calculate offset in pixels relative to the base square
+                    val offsetPx = -centerTileArea.startX * pxPerBasePx * scale
+                    val offsetPy = -centerTileArea.startY * pxPerBasePx * scale
+                    
+                    Log.d("CameraPreview", "CENTERED mode: baseSide=$baseSidePx, squarePx=$squareSizePx, tile=${centerTileArea.width.toInt()}x${centerTileArea.height.toInt()} at (${centerTileArea.startX.toInt()}, ${centerTileArea.startY.toInt()}), scale=$scale, offset=($offsetPx, $offsetPy)")
+                    
+                    Triple(scale, offsetPx, offsetPy)
+                } else {
+                    Triple(1f, 0f, 0f)
+                }
+                
                 Box(
                     modifier = Modifier
                         .size(squareSize)
-                        .clipToBounds()
                         .align(Alignment.Center)
                 ) {
-                    key(resolution) {
-                        AndroidView(
-                            factory = { ctx ->
-                                PreviewView(ctx).apply {
-                                    scaleType = PreviewView.ScaleType.FILL_START
-                                    previewView = this
-                                    Log.d(
-                                        "CameraPreview",
-                                        "PreviewView created cropped to base area ${baseSidePx}px for resolution: ${resolution.width}x${resolution.height}"
-                                    )
-                                }
-                            }, modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer(
+                                    scaleX = previewScale,
+                                    scaleY = previewScale,
+                                    translationX = previewOffsetX,
+                                    translationY = previewOffsetY,
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                                )
+                        ) {
+                            key(resolution) {
+                                AndroidView(
+                                    factory = { ctx ->
+                                        PreviewView(ctx).apply {
+                                            scaleType = PreviewView.ScaleType.FILL_START
+                                            previewView = this
+                                            Log.d(
+                                                "CameraPreview",
+                                                "PreviewView created cropped to base area ${baseSidePx}px for resolution: ${resolution.width}x${resolution.height}"
+                                            )
+                                        }
+                                    }, modifier = Modifier.fillMaxSize()
+                                )
+                            }
 
-                    currentDetection?.let { detection ->
-                        Box(modifier = Modifier.fillMaxSize()) {
+                            currentDetection?.let { detection ->
+                                Box(modifier = Modifier.fillMaxSize()) {
+                            // Use original coordinates from analyzer - graphicsLayer will handle transformation
                             val baseWidth = baseSidePx.toFloat()
                             val baseHeight = baseSidePx.toFloat()
                             val maxBoxes = currentMaxBoxes.coerceAtLeast(0)
 
-                            val displayBoxes = detection.boundingBoxes.take(
-                                maxBoxes
-                            )
+                            val displayBoxes = detection.boundingBoxes.take(maxBoxes)
 
                             val adjustedBoxes = displayBoxes.map { box ->
-                                val left = box.startX.coerceIn(
-                                    0f, baseWidth
-                                )
-                                val top = box.startY.coerceIn(
-                                    0f, baseHeight
-                                )
-                                val right = (box.startX + box.width).coerceIn(
-                                    0f, baseWidth
-                                )
-                                val bottom = (box.startY + box.height).coerceIn(
-                                    0f, baseHeight
-                                )
+                                val left = box.startX.coerceIn(0f, baseWidth)
+                                val top = box.startY.coerceIn(0f, baseHeight)
+                                val right = (box.startX + box.width).coerceIn(0f, baseWidth)
+                                val bottom = (box.startY + box.height).coerceIn(0f, baseHeight)
                                 box.copy(
-                                    startX = left, startY = top, width = max(
-                                        0f, right - left
-                                    ), height = max(
-                                        0f, bottom - top
-                                    )
+                                    startX = left,
+                                    startY = top,
+                                    width = max(0f, right - left),
+                                    height = max(0f, bottom - top)
                                 )
                             }
 
                             val adjustedArea = detection.area.let { area ->
-                                val left = area.startX.coerceIn(
-                                    0f, baseWidth
-                                )
-                                val top = area.startY.coerceIn(
-                                    0f, baseHeight
-                                )
-                                val right = (area.startX + area.width).coerceIn(
-                                    0f, baseWidth
-                                )
-                                val bottom = (area.startY + area.height).coerceIn(
-                                    0f, baseHeight
-                                )
+                                val left = area.startX.coerceIn(0f, baseWidth)
+                                val top = area.startY.coerceIn(0f, baseHeight)
+                                val right = (area.startX + area.width).coerceIn(0f, baseWidth)
+                                val bottom = (area.startY + area.height).coerceIn(0f, baseHeight)
                                 DetectionArea(
-                                    startX = left, startY = top, width = max(
-                                        0f, right - left
-                                    ), height = max(
-                                        0f, bottom - top
-                                    )
+                                    startX = left,
+                                    startY = top,
+                                    width = max(0f, right - left),
+                                    height = max(0f, bottom - top)
                                 )
                             }
 
@@ -318,6 +364,8 @@ fun CameraPreview(
 
                             // Overlay-only stats card removed; InfoBar
                             // handles display below the preview.
+                        }
+                    }
                         }
                     }
                 }
