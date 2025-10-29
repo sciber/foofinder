@@ -53,7 +53,7 @@ fun CameraPreview(
     currentNmsEnabled: Boolean,
     modifier: Modifier = Modifier,
     currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
-    modelId: String = "models/best_plain_float16.tflite",
+    modelId: String = "models/deepoo_yolox_tiny_416_fp32.tflite",
     onCameraReady: (Camera?) -> Unit = {},
     onScanStrategyAutoChange: (CameraAnalyzer.ScanStrategy) -> Unit = {},
     onScanStrategyConstraintChange: (Boolean) -> Unit = {},

@@ -16,7 +16,7 @@ import link.sciber.foofinder.datastore.UserSettings
 class CameraSettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        private const val DEFAULT_MODEL_ID = "models/best_plain_float16.tflite"
+        private const val DEFAULT_MODEL_ID = "models/deepoo_yolox_tiny_416_fp32.tflite"
         private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.45f
         private const val DEFAULT_MAX_BOXES = 15
         private const val DEFAULT_NMS_ENABLED = true

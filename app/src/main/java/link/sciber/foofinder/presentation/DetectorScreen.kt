@@ -89,7 +89,7 @@ fun DetectorScreen(
     val savedTorchEnabled = settingsState.torchEnabled
 
     val modelOptions = remember {
-        listOf("models/best_plain_float16.tflite" to "DeePoo YOLOX Nano")
+        listOf("models/deepoo_yolox_tiny_416_fp32.tflite" to "DeePoo YOLOX Tiny FP32")
     }
 
     val currentConfidenceThreshold = settingsState.confidenceThreshold
