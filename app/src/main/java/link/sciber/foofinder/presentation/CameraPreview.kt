@@ -359,7 +359,8 @@ fun CameraPreview(
                                 detection = adjustedDetection,
                                 sourceWidth = baseSidePx,
                                 sourceHeight = baseSidePx,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = previewScale
                             )
 
                             // Overlay-only stats card removed; InfoBar

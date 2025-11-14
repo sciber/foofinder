@@ -23,6 +23,7 @@ import java.nio.MappedByteBuffer
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 enum class Accelerator {
     CPU, GPU, NNAPI
@@ -55,6 +56,11 @@ class FooDetector(
     private val inputHeight: Int
     private val inputWidth: Int
     private val inputChannels: Int
+    private var inputIsQuantized: Boolean = false
+    private var inputQuantScale: Float = 1f
+    private var inputQuantZeroPoint: Int = 0
+    private var inputQuantMin: Int = Int.MIN_VALUE
+    private var inputQuantMax: Int = Int.MAX_VALUE
 
     private val imageProcessor: ImageProcessor
 
@@ -74,13 +80,16 @@ class FooDetector(
         val channels: Int,
         val height: Int,
         val width: Int,
-        val role: OutputRole
+        val role: OutputRole,
+        val isQuantized: Boolean,
+        val quantScale: Float,
+        val quantZeroPoint: Int
     )
 
     private data class LevelBuffers(
-        var cls: Pair<TensorBuffer, OutputInfo>? = null,
-        var bbox: Pair<TensorBuffer, OutputInfo>? = null,
-        var obj: Pair<TensorBuffer, OutputInfo>? = null
+        var cls: Pair<FloatArray, OutputInfo>? = null,
+        var bbox: Pair<FloatArray, OutputInfo>? = null,
+        var obj: Pair<FloatArray, OutputInfo>? = null
     )
 
     private fun sigmoid(x: Float): Float = 1f / (1f + exp(-x))
@@ -191,6 +200,38 @@ class FooDetector(
             modelInputDataType = inputTensor.dataType()
             modelInputShape = inputTensor.shape()
 
+            if (modelInputDataType == DataType.UINT8 || modelInputDataType == DataType.INT8) {
+                inputIsQuantized = true
+                inputQuantScale = inputTensor.quantizationParams().scale
+                inputQuantZeroPoint = inputTensor.quantizationParams().zeroPoint
+                when (modelInputDataType) {
+                    DataType.UINT8 -> {
+                        inputQuantMin = 0
+                        inputQuantMax = 255
+                    }
+
+                    DataType.INT8 -> {
+                        inputQuantMin = -128
+                        inputQuantMax = 127
+                    }
+
+                    else -> {
+                        inputQuantMin = Int.MIN_VALUE
+                        inputQuantMax = Int.MAX_VALUE
+                    }
+                }
+                Log.d(
+                    TAG,
+                    "Input quantization detected: type=$modelInputDataType scale=$inputQuantScale zp=$inputQuantZeroPoint range=[$inputQuantMin,$inputQuantMax]"
+                )
+            } else {
+                inputIsQuantized = false
+                inputQuantScale = 1f
+                inputQuantZeroPoint = 0
+                inputQuantMin = Int.MIN_VALUE
+                inputQuantMax = Int.MAX_VALUE
+            }
+
             if (modelInputShape.size != 4) {
                 throw IllegalArgumentException(
                     "Expected 4D input tensor, got ${modelInputShape.contentToString()}"
@@ -248,7 +289,10 @@ class FooDetector(
                 val layout: TensorLayout,
                 val channels: Int,
                 val height: Int,
-                val width: Int
+                val width: Int,
+                val isQuantized: Boolean,
+                val quantScale: Float,
+                val quantZeroPoint: Int
             )
             
             val tempInfos = mutableListOf<TempOutputInfo>()
@@ -276,6 +320,9 @@ class FooDetector(
                     shape.getOrElse(2) { 1 }
                 }
                 
+                val quantParams = tensor.quantizationParams()
+                val isQuantized = tensor.dataType() == DataType.INT8 || tensor.dataType() == DataType.UINT8
+
                 tempInfos += TempOutputInfo(
                     index = i,
                     name = tensor.name() ?: "output_$i",
@@ -284,7 +331,10 @@ class FooDetector(
                     layout = layout,
                     channels = channels,
                     height = height,
-                    width = width
+                    width = width,
+                    isQuantized = isQuantized,
+                    quantScale = if (isQuantized) quantParams.scale else 1f,
+                    quantZeroPoint = if (isQuantized) quantParams.zeroPoint else 0
                 )
             }
             
@@ -309,7 +359,10 @@ class FooDetector(
                     channels = info.channels,
                     height = info.height,
                     width = info.width,
-                    role = role
+                    role = role,
+                    isQuantized = info.isQuantized,
+                    quantScale = info.quantScale,
+                    quantZeroPoint = info.quantZeroPoint
                 )
             }
             outputInfos = tmpOutputInfos
@@ -506,24 +559,57 @@ class FooDetector(
         val source = processed.tensorBuffer
         val target = TensorBuffer.createFixedSize(modelInputShape, modelInputDataType)
 
-        if (!inputIsNchw) {
-            target.loadArray(source.floatArray, modelInputShape)
+        val floatData: FloatArray = if (!inputIsNchw) {
+            source.floatArray
+        } else {
+            val nhwc = source.floatArray
+            val nchw = FloatArray(inputChannels * inputHeight * inputWidth)
+            var nhwcIndex = 0
+            for (y in 0 until inputHeight) {
+                for (x in 0 until inputWidth) {
+                    for (c in 0 until inputChannels) {
+                        val nchwIndex = c * inputHeight * inputWidth + y * inputWidth + x
+                        nchw[nchwIndex] = nhwc[nhwcIndex++]
+                    }
+                }
+            }
+            nchw
+        }
+
+        if (!inputIsQuantized) {
+            target.loadArray(floatData, modelInputShape)
             return target
         }
 
-        val nhwc = source.floatArray
-        val nchw = FloatArray(inputChannels * inputHeight * inputWidth)
-        var nhwcIndex = 0
-        for (y in 0 until inputHeight) {
-            for (x in 0 until inputWidth) {
-                for (c in 0 until inputChannels) {
-                    val nchwIndex = c * inputHeight * inputWidth + y * inputWidth + x
-                    nchw[nchwIndex] = nhwc[nhwcIndex++]
+        val buffer = target.buffer
+        buffer.rewind()
+
+        val scale = inputQuantScale.takeIf { it > 0f } ?: 1f
+        val zeroPoint = inputQuantZeroPoint
+        val minQ = inputQuantMin
+        val maxQ = inputQuantMax
+
+        when (modelInputDataType) {
+            DataType.INT8 -> {
+                for (value in floatData) {
+                    val quant = (value / scale + zeroPoint).roundToInt().coerceIn(minQ, maxQ)
+                    buffer.put(quant.toByte())
                 }
+            }
+
+            DataType.UINT8 -> {
+                for (value in floatData) {
+                    val quant = (value / scale + zeroPoint).roundToInt().coerceIn(minQ, maxQ)
+                    buffer.put((quant and 0xFF).toByte())
+                }
+            }
+
+            else -> {
+                throw IllegalStateException("Unsupported quantized input type: $modelInputDataType")
             }
         }
 
-        target.loadArray(nchw, modelInputShape)
+        buffer.rewind()
         return target
     }
 
@@ -548,20 +634,55 @@ class FooDetector(
         return buffers
     }
 
+    private fun TensorBuffer.toDequantizedFloatArray(info: OutputInfo): FloatArray {
+        return if (!info.isQuantized) {
+            this.floatArray
+        } else {
+            val scale = info.quantScale.takeIf { it > 0f } ?: 1f
+            val zeroPoint = info.quantZeroPoint
+            val size = this.flatSize
+            val array = FloatArray(size)
+            val buffer = this.buffer
+            buffer.rewind()
+            when (info.dataType) {
+                DataType.INT8 -> {
+                    repeat(size) { idx ->
+                        array[idx] = (buffer.get().toInt() - zeroPoint) * scale
+                    }
+                }
+
+                DataType.UINT8 -> {
+                    repeat(size) { idx ->
+                        array[idx] = ((buffer.get().toInt() and 0xFF) - zeroPoint) * scale
+                    }
+                }
+
+                else -> {
+                    repeat(size) { idx ->
+                        array[idx] = this.getFloatValue(idx)
+                    }
+                }
+            }
+            array
+        }
+    }
+
     private fun parseYoloOutputs(
         outputs: Map<Int, TensorBuffer>, detectionArea: DetectionArea
     ): ParsedResult {
         val levelBuffers = mutableMapOf<Pair<Int, Int>, LevelBuffers>()
         outputInfos.forEach { info ->
-            val buffer = outputs[info.index]
+            val tensorBuffer = outputs[info.index]
                 ?: throw IllegalStateException("Missing buffer for output index ${info.index}")
+
+            val floatArray = tensorBuffer.toDequantizedFloatArray(info)
 
             val key = info.height to info.width
             val entry = levelBuffers.getOrPut(key) { LevelBuffers() }
             when (info.role) {
-                OutputRole.CLS -> entry.cls = buffer to info
-                OutputRole.BBOX -> entry.bbox = buffer to info
-                OutputRole.OBJ -> entry.obj = buffer to info
+                OutputRole.CLS -> entry.cls = floatArray to info
+                OutputRole.BBOX -> entry.bbox = floatArray to info
+                OutputRole.OBJ -> entry.obj = floatArray to info
             }
         }
         
@@ -626,8 +747,8 @@ class FooDetector(
             
             Log.d(TAG, "Processing level ${height}x${width} with stride=$stride")
 
-            val bboxArray = bboxPair.first.floatArray
-            val objArray = objPair.first.floatArray
+            val bboxArray = bboxPair.first
+            val objArray = objPair.first
             
             var levelDetections = 0
 
@@ -645,7 +766,7 @@ class FooDetector(
                         bestClassId = 0
                     } else {
                         // Multi-class model: compute class scores
-                        val clsArray = clsPair!!.first.floatArray
+                        val clsArray = clsPair!!.first
                         var maxScore = 0f
                         var maxId = 0
                         for (c in 0 until clsPair.second.channels) {

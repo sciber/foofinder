@@ -170,7 +170,7 @@ fun DetectorSettingsSheet(
                     })
 
                 Text(
-                    text = "Input size: 640 × 640",
+                    text = "Input size: 416 × 416",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

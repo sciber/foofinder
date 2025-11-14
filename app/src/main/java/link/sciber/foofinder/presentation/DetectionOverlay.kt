@@ -37,11 +37,22 @@ fun DetectionOverlay(
     sourceWidth: Int,
     sourceHeight: Int,
     modifier: Modifier = Modifier,
+    contentScale: Float = 1f,
 ) {
     val density = LocalDensity.current
-    val textSizePx = with(density) { 12.sp.toPx() }
-    val labelPaddingPx = with(density) { 4.dp.toPx() } // internal text padding only
-    val labelCornerRadiusPx = with(density) { 4.dp.toPx() }
+    val scaleCompensation = if (contentScale > 0f) contentScale else 1f
+    val baseTextSizePx = with(density) { 12.sp.toPx() }
+    val textSizePx = baseTextSizePx / scaleCompensation
+    val baseLabelPaddingPx = with(density) { 4.dp.toPx() } // internal text padding only
+    val labelPaddingPx = baseLabelPaddingPx / scaleCompensation
+    val baseLabelCornerRadiusPx = with(density) { 4.dp.toPx() }
+    val labelCornerRadiusPx = baseLabelCornerRadiusPx / scaleCompensation
+
+    val detectionAreaStrokeWidth = DETECTION_AREA_STROKE_WIDTH / scaleCompensation
+    val fooBoundingBoxStrokeWidth = FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH / scaleCompensation
+    val notFooBoundingBoxStrokeWidth = NOT_FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH / scaleCompensation
+    val otherBoundingBoxStrokeWidth = OTHER_CLASS_BOUNDING_BOX_STROKE_WIDTH / scaleCompensation
+    val baseAreaStrokeWidth = BASE_AREA_STROKE_WIDTH / scaleCompensation
 
     val primaryColor = MaterialTheme.colorScheme.primary
     
@@ -61,7 +72,7 @@ fun DetectionOverlay(
             color = BASE_AREA_COLOR,
             topLeft = Offset(0f, 0f),
             size = Size(baseSideSource * scaleX, baseSideSource * scaleY),
-            style = Stroke(width = BASE_AREA_STROKE_WIDTH)
+            style = Stroke(width = baseAreaStrokeWidth)
         )
 
         // Transform detection area coordinates
@@ -72,7 +83,7 @@ fun DetectionOverlay(
             color = primaryColor,
             topLeft = Offset(scaledArea.startX, scaledArea.startY),
             size = Size(scaledArea.width, scaledArea.height),
-            style = Stroke(width = DETECTION_AREA_STROKE_WIDTH)
+            style = Stroke(width = detectionAreaStrokeWidth)
         )
 
         // Transform and draw bounding boxes
@@ -86,9 +97,9 @@ fun DetectionOverlay(
             }
 
             val boundingBoxStrokeWidth = when (scaledBox.classId) {
-                0 -> FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH
-                1 -> NOT_FOO_CLASS_BOUNDING_BOX_STROKE_WIDTH
-                else -> OTHER_CLASS_BOUNDING_BOX_STROKE_WIDTH
+                0 -> fooBoundingBoxStrokeWidth
+                1 -> notFooBoundingBoxStrokeWidth
+                else -> otherBoundingBoxStrokeWidth
             }
 
             // Bounding boxes

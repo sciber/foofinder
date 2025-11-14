@@ -89,7 +89,11 @@ fun DetectorScreen(
     val savedTorchEnabled = settingsState.torchEnabled
 
     val modelOptions = remember {
-        listOf("models/deepoo_yolox_tiny_416_fp32.tflite" to "DeePoo YOLOX Tiny FP32")
+        listOf(
+            "models/deepoo_yolox_tiny_416_fp32.tflite" to "YOLOX Tiny FP32",
+            "models/deepoo_yolox_tiny_416_fp16.tflite" to "YOLOX Tiny FP16",
+            "models/deepoo_yolox_tiny_416_int8.tflite" to "YOLOX Tiny INT8"
+        )
     }
 
     val currentConfidenceThreshold = settingsState.confidenceThreshold
