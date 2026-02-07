@@ -32,46 +32,49 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import link.sciber.foofinder.data.detection.Accelerator
-import link.sciber.foofinder.data.detection.FooDetector
-import link.sciber.foofinder.domain.Detection
-import link.sciber.foofinder.domain.DetectionArea
 import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
+import link.sciber.foofinder.data.detection.Accelerator
+import link.sciber.foofinder.data.detection.EfficientDetLiteDetector
+import link.sciber.foofinder.domain.Detection
+import link.sciber.foofinder.domain.DetectionArea
 
 typealias TileCaptureRequester = (CameraAnalyzer.TileCaptureCallback) -> Boolean
 
 @Composable
 fun CameraPreview(
-    currentResolution: Size?,
-    onResolutionChange: (Size) -> Unit,
-    currentDetection: Detection?,
-    onDetectionResult: (Detection) -> Unit,
-    currentConfidenceThreshold: Float,
-    currentMaxBoxes: Int,
-    currentNmsEnabled: Boolean,
-    modifier: Modifier = Modifier,
-    currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
-    modelId: String = "models/deepoo_yolox_tiny_416_fp32.tflite",
-    onCameraReady: (Camera?) -> Unit = {},
-    onScanStrategyAutoChange: (CameraAnalyzer.ScanStrategy) -> Unit = {},
-    onScanStrategyConstraintChange: (Boolean) -> Unit = {},
-    onTileCaptureRequesterChange: (TileCaptureRequester?) -> Unit = {}
+        currentResolution: Size?,
+        onResolutionChange: (Size) -> Unit,
+        currentDetection: Detection?,
+        onDetectionResult: (Detection) -> Unit,
+        currentConfidenceThreshold: Float,
+        currentMaxBoxes: Int,
+        currentNmsEnabled: Boolean,
+        modifier: Modifier = Modifier,
+        currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
+        modelId: String = "models/deepoo_efficientdet-lite0.tflite",
+        onCameraReady: (Camera?) -> Unit = {},
+        onScanStrategyAutoChange: (CameraAnalyzer.ScanStrategy) -> Unit = {},
+        onScanStrategyConstraintChange: (Boolean) -> Unit = {},
+        onTileCaptureRequesterChange: (TileCaptureRequester?) -> Unit = {},
+        onTileSizeChanged: (Int?) -> Unit = {},
+        onDelegateChanged: (String?) -> Unit = {}
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
 
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
-    var detector by remember { mutableStateOf<FooDetector?>(null) }
+    var detector by remember { mutableStateOf<EfficientDetLiteDetector?>(null) }
     var analyzer by remember { mutableStateOf<CameraAnalyzer?>(null) }
 
     LaunchedEffect(analyzer) {
-        val requester: TileCaptureRequester? = analyzer?.let { instance ->
-            { callback: CameraAnalyzer.TileCaptureCallback ->
-                instance.requestTileCapture(callback)
-            }
-        }
+        val requester: TileCaptureRequester? =
+                analyzer?.let { instance ->
+                    { callback: CameraAnalyzer.TileCaptureCallback ->
+                        instance.requestTileCapture(callback)
+                    }
+                }
         onTileCaptureRequesterChange(requester)
     }
 
@@ -79,24 +82,24 @@ fun CameraPreview(
     fun computeCenterTileArea(baseSide: Int, tileSize: Int): DetectionArea {
         val offset = ((baseSide - tileSize) / 2f).coerceAtLeast(0f)
         return DetectionArea(
-            startX = offset,
-            startY = offset,
-            width = tileSize.toFloat(),
-            height = tileSize.toFloat()
+                startX = offset,
+                startY = offset,
+                width = tileSize.toFloat(),
+                height = tileSize.toFloat()
         )
     }
 
-    fun requiresScaledSingle(det: FooDetector?, resolution: Size?): Boolean {
+    fun requiresScaledSingle(det: EfficientDetLiteDetector?, resolution: Size?): Boolean {
         val tileSize = det?.getModelInputSize() ?: return false
         val target = resolution ?: return false
         return min(target.width, target.height) < tileSize
     }
 
     fun resolveStrategy(
-        requested: CameraAnalyzer.ScanStrategy,
-        det: FooDetector?,
-        resolution: Size?,
-        notify: Boolean
+            requested: CameraAnalyzer.ScanStrategy,
+            det: EfficientDetLiteDetector?,
+            resolution: Size?,
+            notify: Boolean
     ): CameraAnalyzer.ScanStrategy {
         val needsScaledSingle = requiresScaledSingle(det, resolution)
         if (notify) {
@@ -104,9 +107,7 @@ fun CameraPreview(
         }
         return if (needsScaledSingle && requested != CameraAnalyzer.ScanStrategy.SCALED) {
             if (notify) {
-                onScanStrategyAutoChange(
-                    CameraAnalyzer.ScanStrategy.SCALED
-                )
+                onScanStrategyAutoChange(CameraAnalyzer.ScanStrategy.SCALED)
             }
             CameraAnalyzer.ScanStrategy.SCALED
         } else {
@@ -119,63 +120,61 @@ fun CameraPreview(
             detector?.let { det ->
                 try {
                     Log.d(
-                        "CameraPreview",
-                        "Applying resolution: ${resolution.width}x${resolution.height}"
+                            "CameraPreview",
+                            "Applying resolution: ${resolution.width}x${resolution.height}"
                     )
 
-                    val effectiveStrategy = resolveStrategy(
-                        currentScanStrategy, det, resolution, notify = true
-                    )
+                    val effectiveStrategy =
+                            resolveStrategy(currentScanStrategy, det, resolution, notify = true)
 
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
                     cameraProviderFuture.addListener(
-                        {
-                            val cameraProvider = cameraProviderFuture.get()
+                            {
+                                val cameraProvider = cameraProviderFuture.get()
 
-                            cameraProvider.unbindAll()
-                            onCameraReady(null)
+                                cameraProvider.unbindAll()
+                                onCameraReady(null)
 
-                            val previewBuilder = Preview.Builder().setTargetResolution(
-                                resolution
-                            ).setTargetRotation(
-                                Surface.ROTATION_0
-                            )
+                                val previewBuilder =
+                                        Preview.Builder()
+                                                .setTargetResolution(resolution)
+                                                .setTargetRotation(Surface.ROTATION_0)
 
-                            val previewUseCase = previewBuilder.build()
+                                val previewUseCase = previewBuilder.build()
 
-                            val imageAnalysisBuilder = ImageAnalysis.Builder().setTargetResolution(
-                                resolution
-                            ).setTargetRotation(
-                                Surface.ROTATION_0
-                            ).setBackpressureStrategy(
-                                ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
-                            )
+                                val imageAnalysisBuilder =
+                                        ImageAnalysis.Builder()
+                                                .setTargetResolution(resolution)
+                                                .setTargetRotation(Surface.ROTATION_0)
+                                                .setBackpressureStrategy(
+                                                        ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+                                                )
 
-                            val imageAnalysisUseCase = imageAnalysisBuilder.build()
+                                val imageAnalysisUseCase = imageAnalysisBuilder.build()
 
-                            val createdAnalyzer = CameraAnalyzer(
-                                det, onDetectionResult
-                            ).also {
-                                it.setScanStrategy(
-                                    effectiveStrategy
+                                val createdAnalyzer =
+                                        CameraAnalyzer(det, onDetectionResult).also {
+                                            it.setScanStrategy(effectiveStrategy)
+                                        }
+                                analyzer = createdAnalyzer
+                                imageAnalysisUseCase.setAnalyzer(
+                                        Executors.newSingleThreadExecutor(),
+                                        createdAnalyzer
                                 )
-                            }
-                            analyzer = createdAnalyzer
-                            imageAnalysisUseCase.setAnalyzer(
-                                Executors.newSingleThreadExecutor(), createdAnalyzer
-                            )
 
-                            previewUseCase.surfaceProvider = preview.surfaceProvider
-                            val camera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                previewUseCase,
-                                imageAnalysisUseCase
-                            )
+                                previewUseCase.surfaceProvider = preview.surfaceProvider
+                                val camera =
+                                        cameraProvider.bindToLifecycle(
+                                                lifecycleOwner,
+                                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                                previewUseCase,
+                                                imageAnalysisUseCase
+                                        )
 
-                            onResolutionChange(resolution)
-                            onCameraReady(camera)
-                        }, ContextCompat.getMainExecutor(context)
+                                onResolutionChange(resolution)
+                                onCameraReady(camera)
+                            },
+                            ContextCompat.getMainExecutor(context)
                     )
                 } catch (e: Exception) {
                     Log.e("CameraPreview", "Error applying resolution", e)
@@ -188,20 +187,24 @@ fun CameraPreview(
     LaunchedEffect(modelId) {
         detector?.close()
         detector = null
+        onTileSizeChanged(null)
+        onDelegateChanged(null)
         try {
-            val newDetector = FooDetector(
-                context, modelPath = modelId, accelerator = Accelerator.GPU, numThreads = 4
-            ).also {
-                it.setConfidenceThreshold(
-                    currentConfidenceThreshold
-                )
-                it.setNmsEnabled(currentNmsEnabled)
-            }
+            val newDetector =
+                    EfficientDetLiteDetector(
+                                    context,
+                                    modelPath = modelId,
+                                    accelerator = Accelerator.GPU,
+                                    numThreads = 4
+                            )
+                            .also { it.setConfidenceThreshold(currentConfidenceThreshold) }
             detector = newDetector
-            Log.d("CameraPreview", "FooDetector initialized with model: $modelId")
+            onTileSizeChanged(newDetector.getModelInputSize())
+            onDelegateChanged(newDetector.getDelegateDescription())
+            Log.d("CameraPreview", "EfficientDetLiteDetector initialized with model: $modelId")
             currentResolution?.let { applyResolution(it) }
         } catch (e: Exception) {
-            Log.e("CameraPreview", "Failed to initialize FooDetector", e)
+            Log.e("CameraPreview", "Failed to initialize EfficientDetLiteDetector", e)
         }
     }
 
@@ -210,19 +213,13 @@ fun CameraPreview(
         Log.d("CameraPreview", "Applied confidence threshold: $currentConfidenceThreshold")
     }
 
-    LaunchedEffect(currentNmsEnabled) {
-        detector?.setNmsEnabled(currentNmsEnabled)
-        Log.d("CameraPreview", "Applied NMS enabled: $currentNmsEnabled")
-    }
-
     LaunchedEffect(currentResolution) {
         currentResolution?.let { resolution -> applyResolution(resolution) }
     }
 
     LaunchedEffect(currentScanStrategy, detector, currentResolution) {
-        val effective = resolveStrategy(
-            currentScanStrategy, detector, currentResolution, notify = true
-        )
+        val effective =
+                resolveStrategy(currentScanStrategy, detector, currentResolution, notify = true)
         analyzer?.setScanStrategy(effective)
     }
 
@@ -232,6 +229,7 @@ fun CameraPreview(
             analyzer = null
             detector?.close()
             detector = null
+            onDelegateChanged(null)
             onCameraReady(null)
         }
     }
@@ -246,140 +244,163 @@ fun CameraPreview(
 
                 // For CENTERED strategy, compute the static center tile area
                 val isCenteredStrategy = currentScanStrategy == CameraAnalyzer.ScanStrategy.CENTERED
-                val centerTileArea = if (isCenteredStrategy) {
-                    val currentDetector = detector
-                    if (currentDetector != null) {
-                        try {
-                            val modelInputSize = currentDetector.getModelInputSize()
-                            val tileSize = modelInputSize.coerceAtMost(baseSidePx)
-                            computeCenterTileArea(baseSidePx, tileSize)
-                        } catch (e: Exception) {
+                val centerTileArea =
+                        if (isCenteredStrategy) {
+                            val currentDetector = detector
+                            if (currentDetector != null) {
+                                try {
+                                    val modelInputSize = currentDetector.getModelInputSize()
+                                    val tileSize = modelInputSize.coerceAtMost(baseSidePx)
+                                    computeCenterTileArea(baseSidePx, tileSize)
+                                } catch (e: Exception) {
+                                    null
+                                }
+                            } else {
+                                null
+                            }
+                        } else {
                             null
                         }
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-                
-                val (previewScale, previewOffsetX, previewOffsetY) = if (centerTileArea != null) {
-                    // Calculate how much to zoom and pan to show only the center tile area
-                    // Work in display pixels, then convert offset to DP
-                    val pxPerBasePx = squareSizePx / baseSidePx.toFloat()
-                    val scale = baseSidePx.toFloat() / centerTileArea.width
-                    
-                    // Calculate offset in pixels relative to the base square
-                    val offsetPx = -centerTileArea.startX * pxPerBasePx * scale
-                    val offsetPy = -centerTileArea.startY * pxPerBasePx * scale
-                    
-                    Log.d("CameraPreview", "CENTERED mode: baseSide=$baseSidePx, squarePx=$squareSizePx, tile=${centerTileArea.width.toInt()}x${centerTileArea.height.toInt()} at (${centerTileArea.startX.toInt()}, ${centerTileArea.startY.toInt()}), scale=$scale, offset=($offsetPx, $offsetPy)")
-                    
-                    Triple(scale, offsetPx, offsetPy)
-                } else {
-                    Triple(1f, 0f, 0f)
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .size(squareSize)
-                        .align(Alignment.Center)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clipToBounds()
-                    ) {
+
+                val (previewScale, previewOffsetX, previewOffsetY) =
+                        if (centerTileArea != null) {
+                            // Calculate how much to zoom and pan to show only the center tile area
+                            // Work in display pixels, then convert offset to DP
+                            val pxPerBasePx = squareSizePx / baseSidePx.toFloat()
+                            val scale = baseSidePx.toFloat() / centerTileArea.width
+
+                            // Calculate offset in pixels relative to the base square
+                            val offsetPx = -centerTileArea.startX * pxPerBasePx * scale
+                            val offsetPy = -centerTileArea.startY * pxPerBasePx * scale
+
+                            Log.d(
+                                    "CameraPreview",
+                                    "CENTERED mode: baseSide=$baseSidePx, squarePx=$squareSizePx, tile=${centerTileArea.width.toInt()}x${centerTileArea.height.toInt()} at (${centerTileArea.startX.toInt()}, ${centerTileArea.startY.toInt()}), scale=$scale, offset=($offsetPx, $offsetPy)"
+                            )
+
+                            Triple(scale, offsetPx, offsetPy)
+                        } else {
+                            Triple(1f, 0f, 0f)
+                        }
+
+                Box(modifier = Modifier.size(squareSize).align(Alignment.Center)) {
+                    Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                         Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = previewScale,
-                                    scaleY = previewScale,
-                                    translationX = previewOffsetX,
-                                    translationY = previewOffsetY,
-                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                                )
+                                modifier =
+                                        Modifier.fillMaxSize()
+                                                .graphicsLayer(
+                                                        scaleX = previewScale,
+                                                        scaleY = previewScale,
+                                                        translationX = previewOffsetX,
+                                                        translationY = previewOffsetY,
+                                                        transformOrigin =
+                                                                androidx.compose.ui.graphics
+                                                                        .TransformOrigin(0f, 0f)
+                                                )
                         ) {
                             key(resolution) {
                                 AndroidView(
-                                    factory = { ctx ->
-                                        PreviewView(ctx).apply {
-                                            scaleType = PreviewView.ScaleType.FILL_START
-                                            previewView = this
-                                            Log.d(
-                                                "CameraPreview",
-                                                "PreviewView created cropped to base area ${baseSidePx}px for resolution: ${resolution.width}x${resolution.height}"
-                                            )
-                                        }
-                                    }, modifier = Modifier.fillMaxSize()
+                                        factory = { ctx ->
+                                            PreviewView(ctx).apply {
+                                                scaleType = PreviewView.ScaleType.FILL_START
+                                                previewView = this
+                                                Log.d(
+                                                        "CameraPreview",
+                                                        "PreviewView created cropped to base area ${baseSidePx}px for resolution: ${resolution.width}x${resolution.height}"
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxSize()
                                 )
                             }
 
                             currentDetection?.let { detection ->
                                 Box(modifier = Modifier.fillMaxSize()) {
-                            // Use original coordinates from analyzer - graphicsLayer will handle transformation
-                            val baseWidth = baseSidePx.toFloat()
-                            val baseHeight = baseSidePx.toFloat()
-                            val maxBoxes = currentMaxBoxes.coerceAtLeast(0)
+                                    // Use original coordinates from analyzer - graphicsLayer will
+                                    // handle transformation
+                                    val baseWidth = baseSidePx.toFloat()
+                                    val baseHeight = baseSidePx.toFloat()
+                                    val maxBoxes = currentMaxBoxes.coerceAtLeast(0)
 
-                            val displayBoxes = detection.boundingBoxes.take(maxBoxes)
+                                    val displayBoxes = detection.boundingBoxes.take(maxBoxes)
 
-                            val adjustedBoxes = displayBoxes.map { box ->
-                                val left = box.startX.coerceIn(0f, baseWidth)
-                                val top = box.startY.coerceIn(0f, baseHeight)
-                                val right = (box.startX + box.width).coerceIn(0f, baseWidth)
-                                val bottom = (box.startY + box.height).coerceIn(0f, baseHeight)
-                                box.copy(
-                                    startX = left,
-                                    startY = top,
-                                    width = max(0f, right - left),
-                                    height = max(0f, bottom - top)
-                                )
+                                    val adjustedBoxes =
+                                            displayBoxes.map { box ->
+                                                val left = box.startX.coerceIn(0f, baseWidth)
+                                                val top = box.startY.coerceIn(0f, baseHeight)
+                                                val right =
+                                                        (box.startX + box.width).coerceIn(
+                                                                0f,
+                                                                baseWidth
+                                                        )
+                                                val bottom =
+                                                        (box.startY + box.height).coerceIn(
+                                                                0f,
+                                                                baseHeight
+                                                        )
+                                                box.copy(
+                                                        startX = left,
+                                                        startY = top,
+                                                        width = max(0f, right - left),
+                                                        height = max(0f, bottom - top)
+                                                )
+                                            }
+
+                                    val adjustedArea =
+                                            detection.area.let { area ->
+                                                val left = area.startX.coerceIn(0f, baseWidth)
+                                                val top = area.startY.coerceIn(0f, baseHeight)
+                                                val right =
+                                                        (area.startX + area.width).coerceIn(
+                                                                0f,
+                                                                baseWidth
+                                                        )
+                                                val bottom =
+                                                        (area.startY + area.height).coerceIn(
+                                                                0f,
+                                                                baseHeight
+                                                        )
+                                                DetectionArea(
+                                                        startX = left,
+                                                        startY = top,
+                                                        width = max(0f, right - left),
+                                                        height = max(0f, bottom - top)
+                                                )
+                                            }
+
+                                    val adjustedDetection =
+                                            detection.copy(
+                                                    boundingBoxes = adjustedBoxes,
+                                                    area = adjustedArea
+                                            )
+
+                                    DetectionOverlay(
+                                            detection = adjustedDetection,
+                                            sourceWidth = baseSidePx,
+                                            sourceHeight = baseSidePx,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = previewScale
+                                    )
+
+                                    // Overlay-only stats card removed; InfoBar
+                                    // handles display below the preview.
+                                }
                             }
-
-                            val adjustedArea = detection.area.let { area ->
-                                val left = area.startX.coerceIn(0f, baseWidth)
-                                val top = area.startY.coerceIn(0f, baseHeight)
-                                val right = (area.startX + area.width).coerceIn(0f, baseWidth)
-                                val bottom = (area.startY + area.height).coerceIn(0f, baseHeight)
-                                DetectionArea(
-                                    startX = left,
-                                    startY = top,
-                                    width = max(0f, right - left),
-                                    height = max(0f, bottom - top)
-                                )
-                            }
-
-                            val adjustedDetection = detection.copy(
-                                boundingBoxes = adjustedBoxes, area = adjustedArea
-                            )
-
-                            DetectionOverlay(
-                                detection = adjustedDetection,
-                                sourceWidth = baseSidePx,
-                                sourceHeight = baseSidePx,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = previewScale
-                            )
-
-                            // Overlay-only stats card removed; InfoBar
-                            // handles display below the preview.
-                        }
-                    }
                         }
                     }
                 }
             }
-        } ?: run {
-            AndroidView(
-                factory = { ctx ->
-                    PreviewView(ctx).apply {
-                        scaleType = PreviewView.ScaleType.FIT_CENTER
-                        previewView = this
-                    }
-                }, modifier = Modifier.fillMaxSize()
-            )
         }
+                ?: run {
+                    AndroidView(
+                            factory = { ctx ->
+                                PreviewView(ctx).apply {
+                                    scaleType = PreviewView.ScaleType.FIT_CENTER
+                                    previewView = this
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                    )
+                }
     }
 }

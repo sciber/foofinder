@@ -16,7 +16,7 @@ import link.sciber.foofinder.datastore.UserSettings
 class CameraSettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        private const val DEFAULT_MODEL_ID = "models/deepoo_yolox_tiny_416_fp32.tflite"
+        private const val DEFAULT_MODEL_ID = "models/deepoo_efficientdet-lite0.tflite"
         private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.45f
         private const val DEFAULT_MAX_BOXES = 15
         private const val DEFAULT_NMS_ENABLED = true
@@ -24,13 +24,13 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
     }
 
     data class UiState(
-        val resolution: Size? = null,
-        val modelId: String = DEFAULT_MODEL_ID,
-        val scanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
-        val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
-        val maxBoxes: Int = DEFAULT_MAX_BOXES,
-        val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED,
-        val torchEnabled: Boolean = DEFAULT_TORCH_ENABLED
+            val resolution: Size? = null,
+            val modelId: String = DEFAULT_MODEL_ID,
+            val scanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
+            val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
+            val maxBoxes: Int = DEFAULT_MAX_BOXES,
+            val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED,
+            val torchEnabled: Boolean = DEFAULT_TORCH_ENABLED
     )
 
     private val repository = CameraSettingsRepository(application.userSettingsStore)
@@ -41,14 +41,21 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
     init {
         viewModelScope.launch {
             repository.settings.collect { settings ->
-                _uiState.value = UiState(
-                    resolution = settings.toResolution(),
-                    modelId = settings.modelId.takeIf { it.isNotBlank() } ?: DEFAULT_MODEL_ID,
-                    scanStrategy = settings.scanStrategy.toScanStrategy(),
-                    confidenceThreshold = settings.toConfidenceThreshold(),
-                    maxBoxes = settings.toMaxBoxes(),
-                    nmsEnabled = settings.toNmsEnabled(),
-                    torchEnabled = settings.toTorchEnabled())
+                _uiState.value =
+                        UiState(
+                                resolution = settings.toResolution(),
+                                modelId =
+                                        settings.modelId.takeIf {
+                                            it.isNotBlank() &&
+                                                    it.startsWith("models/deepoo_efficientdet")
+                                        }
+                                                ?: DEFAULT_MODEL_ID,
+                                scanStrategy = settings.scanStrategy.toScanStrategy(),
+                                confidenceThreshold = settings.toConfidenceThreshold(),
+                                maxBoxes = settings.toMaxBoxes(),
+                                nmsEnabled = settings.toNmsEnabled(),
+                                torchEnabled = settings.toTorchEnabled()
+                        )
             }
         }
     }

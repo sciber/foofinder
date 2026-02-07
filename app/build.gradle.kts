@@ -71,6 +71,8 @@ dependencies {
     implementation(libs.tensorflow.lite)
     implementation(libs.tensorflow.lite.gpu)
     implementation(libs.tensorflow.lite.gpu.api)
+    implementation(libs.tensorflow.lite.select.tf.ops)
+
     implementation(libs.androidx.datastore)
     implementation(libs.protobuf.javalite)
     implementation(libs.androidx.lifecycle.runtime.compose)

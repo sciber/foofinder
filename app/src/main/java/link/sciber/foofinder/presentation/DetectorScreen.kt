@@ -68,8 +68,8 @@ private const val TAG = "DetectorScreen"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetectorScreen(
-    onNavigateToImageViewer: (imageUri: String, fileName: String) -> Unit = { _, _ -> },
-    onNavigateToDataset: () -> Unit = {}
+        onNavigateToImageViewer: (imageUri: String, fileName: String) -> Unit = { _, _ -> },
+        onNavigateToDataset: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -90,9 +90,9 @@ fun DetectorScreen(
 
     val modelOptions = remember {
         listOf(
-            "models/deepoo_yolox_tiny_416_fp32.tflite" to "YOLOX Tiny FP32",
-            "models/deepoo_yolox_tiny_416_fp16.tflite" to "YOLOX Tiny FP16",
-            "models/deepoo_yolox_tiny_416_int8.tflite" to "YOLOX Tiny INT8"
+                "models/deepoo_efficientdet-lite0.tflite" to "EfficientDet-Lite0 FP32",
+                "models/deepoo_efficientdet_lite0_fp16.tflite" to "EfficientDet-Lite0 FP16",
+                "models/deepoo_efficientdet_lite0_int8.tflite" to "EfficientDet-Lite0 INT8",
         )
     }
 
@@ -101,6 +101,8 @@ fun DetectorScreen(
     val currentMaxBoxes = settingsState.maxBoxes
     // Detection results
     var currentDetection by remember { mutableStateOf<Detection?>(null) }
+    var currentTileSize by remember { mutableStateOf<Int?>(null) }
+    var currentDelegate by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var tileCaptureRequester by remember { mutableStateOf<TileCaptureRequester?>(null) }
@@ -108,16 +110,18 @@ fun DetectorScreen(
     var shouldCaptureAfterPermission by remember { mutableStateOf(false) }
     var hasLegacyWritePermission by remember {
         mutableStateOf(
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || ContextCompat.checkSelfPermission(
-                context, Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                        ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        ) == PackageManager.PERMISSION_GRANTED
         )
     }
 
     val writePermission = Manifest.permission.WRITE_EXTERNAL_STORAGE
 
     fun canWriteToGallery(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || hasLegacyWritePermission
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || hasLegacyWritePermission
 
     fun startTileCapture() {
         shouldCaptureAfterPermission = false
@@ -125,80 +129,83 @@ fun DetectorScreen(
         if (requester == null) {
             scope.launch {
                 snackbarHostState.showSnackbar(
-                    message = "Analyzer not ready yet. Please try again shortly."
+                        message = "Analyzer not ready yet. Please try again shortly."
                 )
             }
             return
         }
 
         isSaving = true
-        val requested = requester.invoke { result ->
-            scope.launch {
-                if (result == null) {
-                    isSaving = false
-                    snackbarHostState.showSnackbar(
-                        message = "No detection tile available to save yet."
-                    )
-                    return@launch
-                }
+        val requested =
+                requester.invoke { result ->
+                    scope.launch {
+                        if (result == null) {
+                            isSaving = false
+                            snackbarHostState.showSnackbar(
+                                    message = "No detection tile available to save yet."
+                            )
+                            return@launch
+                        }
 
-                val outcome = try {
-                    withContext(Dispatchers.IO) {
-                        ImageStorageManager.saveDetectionTile(context, result.bitmap)
+                        val outcome =
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        ImageStorageManager.saveDetectionTile(
+                                                context,
+                                                result.bitmap
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to save detection tile", e)
+                                    snackbarHostState.showSnackbar(
+                                            message =
+                                                    "Failed to save image: ${e.localizedMessage ?: "unknown error"}"
+                                    )
+                                    null
+                                }
+
+                        outcome?.let { saveOutcome ->
+                            // Navigate to image viewer screen
+                            onNavigateToImageViewer(
+                                    saveOutcome.uri.toString(),
+                                    saveOutcome.displayName
+                            )
+                        }
+
+                        isSaving = false
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to save detection tile", e)
-                    snackbarHostState.showSnackbar(
-                        message = "Failed to save image: ${e.localizedMessage ?: "unknown error"}"
-                    )
-                    null
                 }
-
-                outcome?.let { saveOutcome ->
-                    // Navigate to image viewer screen
-                    onNavigateToImageViewer(
-                        saveOutcome.uri.toString(), saveOutcome.displayName
-                    )
-                }
-
-                isSaving = false
-            }
-        }
 
         if (!requested) {
             isSaving = false
             scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = "Capture already pending, please wait."
-                )
+                snackbarHostState.showSnackbar(message = "Capture already pending, please wait.")
             }
         }
     }
 
-    val requestPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasLegacyWritePermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || granted
-        if (granted) {
-            if (shouldCaptureAfterPermission) {
-                startTileCapture()
+    val requestPermissionLauncher =
+            rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted
+                ->
+                hasLegacyWritePermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || granted
+                if (granted) {
+                    if (shouldCaptureAfterPermission) {
+                        startTileCapture()
+                    }
+                } else {
+                    shouldCaptureAfterPermission = false
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                                message = "Storage permission denied. Cannot save images."
+                        )
+                    }
+                }
             }
-        } else {
-            shouldCaptureAfterPermission = false
-            scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = "Storage permission denied. Cannot save images."
-                )
-            }
-        }
-    }
 
     fun handleSnapshotRequest() {
         if (isSaving) {
             scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = "Image save already in progress."
-                )
+                snackbarHostState.showSnackbar(message = "Image save already in progress.")
             }
             return
         }
@@ -222,10 +229,9 @@ fun DetectorScreen(
         if (availableResolutions.isEmpty()) return@LaunchedEffect
 
         val persisted = currentResolution
-        val targetResolution = persisted?.let { saved -> availableResolutions.find { it == saved } }
-            ?: CameraResolutionUtils.findBestDefaultResolution(
-                availableResolutions
-            )
+        val targetResolution =
+                persisted?.let { saved -> availableResolutions.find { it == saved } }
+                        ?: CameraResolutionUtils.findBestDefaultResolution(availableResolutions)
 
         if (targetResolution != null && targetResolution != persisted) {
             settingsViewModel.onResolutionChanged(targetResolution)
@@ -281,109 +287,114 @@ fun DetectorScreen(
         val maxSheetHeight = screenHeight - topBarHeight
 
         // Two-state bottom sheet: Collapsed (peek) and Expanded (to top bar)
-        val bottomSheetState = androidx.compose.material3.rememberBottomSheetScaffoldState(
-            bottomSheetState = rememberStandardBottomSheetState(
-                initialValue = SheetValue.PartiallyExpanded, skipHiddenState = true
-            )
-        )
-
-        BottomSheetScaffold(
-            scaffoldState = bottomSheetState,
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            sheetPeekHeight = 92.dp,
-            sheetContent = {
-                // Single scrollable content area with height constraint
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = maxSheetHeight)
-                        .verticalScroll(sheetScrollState)
-                        .padding(horizontal = 16.dp)
-                        .padding(
-                            top = 16.dp, bottom = navInsets.calculateBottomPadding() + 16.dp
-                        ), verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    DetectorInfoBar(
-                        currentDetection = currentDetection, modifier = Modifier.fillMaxWidth()
-                    )
-
-                    DetectorSettingsSheet(
-                        currentConfidenceThreshold = currentConfidenceThreshold,
-                        currentMaxBoxes = currentMaxBoxes,
-                        currentNmsEnabled = currentNmsEnabled,
-                        currentScanStrategy = currentScanStrategy,
-                        scanStrategyConstrained = scanStrategyConstrained,
-                        availableResolutions = availableResolutions,
-                        currentResolution = currentResolution,
-                        modelOptions = modelOptions,
-                        currentModelId = currentModelId,
-                        onConfidenceThresholdChanged = settingsViewModel::onConfidenceThresholdChanged,
-                        onMaxBoxesChanged = settingsViewModel::onMaxBoxesChanged,
-                        onNmsEnabledChanged = settingsViewModel::onNmsEnabledChanged,
-                        onScanStrategyChanged = settingsViewModel::onScanStrategyChanged,
-                        onResolutionChanged = settingsViewModel::onResolutionChanged,
-                        onModelChanged = settingsViewModel::onModelChanged
-                    )
-                }
-            }) { paddingValues ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                DetectorTopBar(
-                    isTorchEnabled = isTorchEnabled,
-                    isTorchAvailable = isTorchAvailable,
-                    onToggleTorch = toggleTorch,
-                    onDatasetClick = onNavigateToDataset
+        val bottomSheetState =
+                androidx.compose.material3.rememberBottomSheetScaffoldState(
+                        bottomSheetState =
+                                rememberStandardBottomSheetState(
+                                        initialValue = SheetValue.PartiallyExpanded,
+                                        skipHiddenState = true
+                                )
                 )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                ) {
+        BottomSheetScaffold(
+                scaffoldState = bottomSheetState,
+                snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+                sheetPeekHeight = 92.dp,
+                sheetContent = {
+                    // Single scrollable content area with height constraint
+                    Column(
+                            modifier =
+                                    Modifier.fillMaxWidth()
+                                            .heightIn(max = maxSheetHeight)
+                                            .verticalScroll(sheetScrollState)
+                                            .padding(horizontal = 16.dp)
+                                            .padding(
+                                                    top = 16.dp,
+                                                    bottom =
+                                                            navInsets.calculateBottomPadding() +
+                                                                    16.dp
+                                            ),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        DetectorInfoBar(
+                                currentDetection = currentDetection,
+                                modifier = Modifier.fillMaxWidth(),
+                                currentTileSize = currentTileSize,
+                                delegateDescription = currentDelegate,
+                        )
+
+                        DetectorSettingsSheet(
+                                currentConfidenceThreshold = currentConfidenceThreshold,
+                                currentMaxBoxes = currentMaxBoxes,
+                                currentNmsEnabled = currentNmsEnabled,
+                                currentScanStrategy = currentScanStrategy,
+                                scanStrategyConstrained = scanStrategyConstrained,
+                                availableResolutions = availableResolutions,
+                                currentResolution = currentResolution,
+                                modelOptions = modelOptions,
+                                currentModelId = currentModelId,
+                                currentTileSize = currentTileSize,
+                                onConfidenceThresholdChanged =
+                                        settingsViewModel::onConfidenceThresholdChanged,
+                                onMaxBoxesChanged = settingsViewModel::onMaxBoxesChanged,
+                                onNmsEnabledChanged = settingsViewModel::onNmsEnabledChanged,
+                                onScanStrategyChanged = settingsViewModel::onScanStrategyChanged,
+                                onResolutionChanged = settingsViewModel::onResolutionChanged,
+                                onModelChanged = settingsViewModel::onModelChanged
+                        )
+                    }
+                }
+        ) { paddingValues ->
+            Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+                DetectorTopBar(
+                        isTorchEnabled = isTorchEnabled,
+                        isTorchAvailable = isTorchAvailable,
+                        onToggleTorch = toggleTorch,
+                        onDatasetClick = onNavigateToDataset
+                )
+
+                Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
                     CameraPreview(
-                        currentResolution = currentResolution,
-                        onResolutionChange = { resolution ->
-                            settingsViewModel.onResolutionChanged(resolution)
-                        },
-                        currentDetection = currentDetection,
-                        onDetectionResult = { detection ->
-                            currentDetection = detection
-                        },
-                        currentConfidenceThreshold = currentConfidenceThreshold,
-                        currentMaxBoxes = currentMaxBoxes,
-                        currentNmsEnabled = currentNmsEnabled,
-                        modifier = Modifier.fillMaxSize(),
-                        currentScanStrategy = currentScanStrategy,
-                        modelId = currentModelId,
-                        onCameraReady = { camera ->
-                            currentCamera = camera
-                            isCameraReady = true
-                        },
-                        onScanStrategyAutoChange = { enforced ->
-                            if (enforced != currentScanStrategy) {
-                                settingsViewModel.onScanStrategyChanged(
-                                    enforced
-                                )
+                            currentResolution = currentResolution,
+                            onResolutionChange = { resolution ->
+                                settingsViewModel.onResolutionChanged(resolution)
+                            },
+                            currentDetection = currentDetection,
+                            onDetectionResult = { detection -> currentDetection = detection },
+                            currentConfidenceThreshold = currentConfidenceThreshold,
+                            currentMaxBoxes = currentMaxBoxes,
+                            currentNmsEnabled = currentNmsEnabled,
+                            modifier = Modifier.fillMaxSize(),
+                            currentScanStrategy = currentScanStrategy,
+                            modelId = currentModelId,
+                            onTileSizeChanged = { size -> currentTileSize = size },
+                            onDelegateChanged = { desc -> currentDelegate = desc },
+                            onCameraReady = { camera ->
+                                currentCamera = camera
+                                isCameraReady = true
+                            },
+                            onScanStrategyAutoChange = { enforced ->
+                                if (enforced != currentScanStrategy) {
+                                    settingsViewModel.onScanStrategyChanged(enforced)
+                                }
+                            },
+                            onScanStrategyConstraintChange = { constrained ->
+                                scanStrategyConstrained = constrained
+                            },
+                            onTileCaptureRequesterChange = { requester ->
+                                tileCaptureRequester = requester
                             }
-                        },
-                        onScanStrategyConstraintChange = { constrained ->
-                            scanStrategyConstrained = constrained
-                        },
-                        onTileCaptureRequesterChange = { requester ->
-                            tileCaptureRequester = requester
-                        })
+                    )
 
                     // Loading indicator while camera is initializing
                     if (!isCameraReady) {
                         Box(
-                            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
                         ) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(48.dp),
-                                color = MaterialTheme.colorScheme.primary
+                                    modifier = Modifier.size(48.dp),
+                                    color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -393,24 +404,22 @@ fun DetectorScreen(
                 Spacer(modifier = Modifier.weight(1f))
 
                 // Snapshot FAB - centered between camera preview and bottom sheet
-                Box(
-                    modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center
-                ) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     FloatingActionButton(
-                        onClick = { handleSnapshotRequest() },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(64.dp)
+                            onClick = { handleSnapshotRequest() },
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(64.dp)
                     ) {
                         if (isSaving) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
                             )
                         } else {
                             Icon(
-                                painter = painterResource(id = R.drawable.camera_24),
-                                contentDescription = "Save analyzed image"
+                                    painter = painterResource(id = R.drawable.camera_24),
+                                    contentDescription = "Save analyzed image"
                             )
                         }
                     }

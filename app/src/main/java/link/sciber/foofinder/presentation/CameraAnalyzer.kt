@@ -10,27 +10,32 @@ import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.core.graphics.scale
-import link.sciber.foofinder.data.detection.FooDetector
-import link.sciber.foofinder.domain.Detection
-import link.sciber.foofinder.domain.DetectionArea
 import java.io.ByteArrayOutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
+import link.sciber.foofinder.data.detection.EfficientDetLiteDetector
+import link.sciber.foofinder.domain.Detection
+import link.sciber.foofinder.domain.DetectionArea
 
 class CameraAnalyzer(
-    private val detector: FooDetector, private val onDetectionResult: (Detection) -> Unit
+        private val detector: EfficientDetLiteDetector,
+        private val onDetectionResult: (Detection) -> Unit
 ) : ImageAnalysis.Analyzer {
 
     private val pendingTileCapture = AtomicReference<TileCaptureCallback?>(null)
 
     /** Scanning strategies for object detection. */
     enum class ScanStrategy {
-        SCALED, CENTERED
+        SCALED,
+        CENTERED
     }
 
     data class TileCaptureResult(
-        val bitmap: Bitmap, val area: DetectionArea, val rotationDegrees: Int, val timestampMs: Long
+            val bitmap: Bitmap,
+            val area: DetectionArea,
+            val rotationDegrees: Int,
+            val timestampMs: Long
     )
 
     fun interface TileCaptureCallback {
@@ -62,14 +67,15 @@ class CameraAnalyzer(
     }
 
     override fun analyze(imageProxy: ImageProxy) {
-        fun emptyDetectionResult() = Detection(
-            boundingBoxes = emptyList(),
-            area = DetectionArea(0f, 0f, 0f, 0f),
-            inferenceMs = -1,
-            fps = 0f,
-            rawDetections = 0,
-            afterNmsDetections = 0
-        )
+        fun emptyDetectionResult() =
+                Detection(
+                        boundingBoxes = emptyList(),
+                        area = DetectionArea(0f, 0f, 0f, 0f),
+                        inferenceMs = -1,
+                        fps = 0f,
+                        rawDetections = 0,
+                        afterNmsDetections = 0
+                )
 
         try {
             val width = imageProxy.width
@@ -77,12 +83,14 @@ class CameraAnalyzer(
             val format = imageProxy.format
             val rotationDegrees = imageProxy.imageInfo.rotationDegrees
 
-            val (displayWidth, displayHeight) = if (rotationDegrees == 90 || rotationDegrees == 270) height to width
-            else width to height
+            val (displayWidth, displayHeight) =
+                    if (rotationDegrees == 90 || rotationDegrees == 270) height to width
+                    else width to height
 
             Log.d(
-                TAG,
-                "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, " + "format: $format, rotation: ${rotationDegrees}°"
+                    TAG,
+                    "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, " +
+                            "format: $format, rotation: ${rotationDegrees}°"
             )
 
             val analyzeStart = System.nanoTime()
@@ -94,53 +102,64 @@ class CameraAnalyzer(
             if (bitmap != null) {
                 val detectStart = System.nanoTime()
                 val baseSide = min(bitmap.width, bitmap.height)
-                val modelInputSize = try {
-                    detector.getModelInputSize().coerceAtLeast(1)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to get model input size, detector may be closed", e)
-                    onDetectionResult(emptyDetectionResult())
-                    bitmap.recycle()
-                    return
-                }
+                val modelInputSize =
+                        try {
+                            detector.getModelInputSize().coerceAtLeast(1)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to get model input size, detector may be closed", e)
+                            onDetectionResult(emptyDetectionResult())
+                            bitmap.recycle()
+                            return
+                        }
                 var detectionAreaUsed: DetectionArea? = null
 
-                val detection = try {
-                    when (strategy) {
-                        ScanStrategy.SCALED -> detector.detect(bitmap).also {
-                            detectionAreaUsed = DetectionArea(
-                                0f, 0f, baseSide.toFloat(), baseSide.toFloat()
-                            )
-                        }
+                val detection =
+                        try {
+                            when (strategy) {
+                                ScanStrategy.SCALED ->
+                                        detector.detect(bitmap).also {
+                                            detectionAreaUsed =
+                                                    DetectionArea(
+                                                            0f,
+                                                            0f,
+                                                            baseSide.toFloat(),
+                                                            baseSide.toFloat()
+                                                    )
+                                        }
+                                ScanStrategy.CENTERED -> {
+                                    val tileSize =
+                                            detector.getModelInputSize().coerceAtMost(baseSide)
+                                    val area =
+                                            computeCenterTileArea(
+                                                    baseStartX = 0,
+                                                    baseStartY = 0,
+                                                    baseSide = baseSide,
+                                                    tileSize = tileSize
+                                            )
 
-                        ScanStrategy.CENTERED -> {
-                            val tileSize = detector.getModelInputSize().coerceAtMost(baseSide)
-                            val area = computeCenterTileArea(
-                                baseStartX = 0,
-                                baseStartY = 0,
-                                baseSide = baseSide,
-                                tileSize = tileSize
-                            )
-
-                            detector.detectInArea(bitmap, area).also { detectionAreaUsed = area }
+                                    detector.detectInArea(bitmap, area).also {
+                                        detectionAreaUsed = area
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Detection failed, detector may be closed", e)
+                            onDetectionResult(emptyDetectionResult())
+                            bitmap.recycle()
+                            return
                         }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Detection failed, detector may be closed", e)
-                    onDetectionResult(emptyDetectionResult())
-                    bitmap.recycle()
-                    return
-                }
 
                 val detectMs = (System.nanoTime() - detectStart) / 1_000_000L
                 val transformStart = System.nanoTime()
-                val transformedDetection = transformDetectionCoordinates(
-                    detection,
-                    bitmap.width,
-                    bitmap.height,
-                    displayWidth,
-                    displayHeight,
-                    rotationDegrees
-                )
+                val transformedDetection =
+                        transformDetectionCoordinates(
+                                detection,
+                                bitmap.width,
+                                bitmap.height,
+                                displayWidth,
+                                displayHeight,
+                                rotationDegrees
+                        )
                 val transformMs = (System.nanoTime() - transformStart) / 1_000_000L
 
                 val now = System.currentTimeMillis()
@@ -149,31 +168,31 @@ class CameraAnalyzer(
                     timestamps.removeFirst()
                 }
                 val elapsed = (timestamps.last() - timestamps.first()).coerceAtLeast(1)
-                val fps = if (timestamps.size >= 2) (timestamps.size - 1) * 1000f / elapsed
-                else 0f
+                val fps = if (timestamps.size >= 2) (timestamps.size - 1) * 1000f / elapsed else 0f
 
                 onDetectionResult(
-                    transformedDetection.copy(
-                        fps = fps, afterNmsDetections = transformedDetection.boundingBoxes.size
-                    )
+                        transformedDetection.copy(
+                                fps = fps,
+                                afterNmsDetections = transformedDetection.boundingBoxes.size
+                        )
                 )
 
                 Log.d(
-                    TAG,
-                    "Detection completed: ${transformedDetection.boundingBoxes.size} objects detected"
+                        TAG,
+                        "Detection completed: ${transformedDetection.boundingBoxes.size} objects detected"
                 )
 
                 handlePendingTileCapture(
-                    frameBitmap = bitmap,
-                    area = detectionAreaUsed,
-                    rotationDegrees = rotationDegrees,
-                    modelInputSize = modelInputSize
+                        frameBitmap = bitmap,
+                        area = detectionAreaUsed,
+                        rotationDegrees = rotationDegrees,
+                        modelInputSize = modelInputSize
                 )
 
                 val analyzeMs = (System.nanoTime() - analyzeStart) / 1_000_000L
                 Log.d(
-                    TAG,
-                    "Timing(analyze): detect=${detectMs}ms, transform=${transformMs}ms, total=${analyzeMs}ms"
+                        TAG,
+                        "Timing(analyze): detect=${detectMs}ms, transform=${transformMs}ms, total=${analyzeMs}ms"
                 )
 
                 bitmap.recycle()
@@ -190,7 +209,10 @@ class CameraAnalyzer(
     }
 
     private fun handlePendingTileCapture(
-        frameBitmap: Bitmap, area: DetectionArea?, rotationDegrees: Int, modelInputSize: Int
+            frameBitmap: Bitmap,
+            area: DetectionArea?,
+            rotationDegrees: Int,
+            modelInputSize: Int
     ) {
         val callback = pendingTileCapture.getAndSet(null) ?: return
         if (area == null || area.width <= 0f || area.height <= 0f) {
@@ -210,7 +232,8 @@ class CameraAnalyzer(
 
             if (cropWidth <= 0 || cropHeight <= 0) {
                 Log.w(
-                    TAG, "Tile capture failed due to invalid crop size: ${cropWidth}x${cropHeight}"
+                        TAG,
+                        "Tile capture failed due to invalid crop size: ${cropWidth}x${cropHeight}"
                 )
                 callback.onTileCaptured(null)
                 return
@@ -228,9 +251,7 @@ class CameraAnalyzer(
 
             if (rotationDegrees != 0) {
                 val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                val rotated = Bitmap.createBitmap(
-                    tile, 0, 0, tile.width, tile.height, matrix, true
-                )
+                val rotated = Bitmap.createBitmap(tile, 0, 0, tile.width, tile.height, matrix, true)
                 if (rotated !== tile) {
                     tile.recycle()
                     tile = rotated
@@ -238,12 +259,12 @@ class CameraAnalyzer(
             }
 
             callback.onTileCaptured(
-                TileCaptureResult(
-                    bitmap = tile,
-                    area = area,
-                    rotationDegrees = rotationDegrees,
-                    timestampMs = System.currentTimeMillis()
-                )
+                    TileCaptureResult(
+                            bitmap = tile,
+                            area = area,
+                            rotationDegrees = rotationDegrees,
+                            timestampMs = System.currentTimeMillis()
+                    )
             )
         } catch (e: Exception) {
             Log.e(TAG, "Tile capture failed", e)
@@ -252,14 +273,17 @@ class CameraAnalyzer(
     }
 
     private fun computeCenterTileArea(
-        baseStartX: Int, baseStartY: Int, baseSide: Int, tileSize: Int
+            baseStartX: Int,
+            baseStartY: Int,
+            baseSide: Int,
+            tileSize: Int
     ): DetectionArea {
         val offset = ((baseSide - tileSize) / 2f).coerceAtLeast(0f)
         return DetectionArea(
-            startX = baseStartX + offset,
-            startY = baseStartY + offset,
-            width = tileSize.toFloat(),
-            height = tileSize.toFloat()
+                startX = baseStartX + offset,
+                startY = baseStartY + offset,
+                width = tileSize.toFloat(),
+                height = tileSize.toFloat()
         )
     }
 
@@ -275,7 +299,6 @@ class CameraAnalyzer(
                     Log.d(TAG, "Timing(convert): YUV->Bitmap=${yuvMs}ms")
                     bmp
                 }
-
                 ImageFormat.JPEG -> {
                     // Convert JPEG to Bitmap with timing
                     val tJpegStart = System.nanoTime()
@@ -288,7 +311,6 @@ class CameraAnalyzer(
                     Log.d(TAG, "Timing(convert): JPEG->Bitmap=${jpegMs}ms")
                     bmp
                 }
-
                 else -> {
                     Log.w(TAG, "Unsupported image format: ${imageProxy.format}")
                     null
@@ -356,14 +378,10 @@ class CameraAnalyzer(
 
             val tCopyEnd = System.nanoTime()
 
-            val yuvImage = YuvImage(
-                nv21, ImageFormat.NV21, width, height, null
-            )
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
             val out = ByteArrayOutputStream()
             val tJpegStart = System.nanoTime()
-            yuvImage.compressToJpeg(
-                Rect(0, 0, width, height), 100, out
-            )
+            yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
             val imageBytes = out.toByteArray()
             val tJpegEnd = System.nanoTime()
 
@@ -374,8 +392,8 @@ class CameraAnalyzer(
             val tEnd = System.nanoTime()
 
             Log.d(
-                TAG,
-                "Timing(YUV): copy=${((tCopyEnd - tCopyStart) / 1_000_000L)}ms, compress=${((tJpegEnd - tJpegStart) / 1_000_000L)}ms, decode=${((tDecodeEnd - tDecodeStart) / 1_000_000L)}ms, total=${((tEnd - tStart) / 1_000_000L)}ms, strides=[Y:${yRowStride}x${yPixelStride}, UV:${uvRowStride}x${uvPixelStride}]"
+                    TAG,
+                    "Timing(YUV): copy=${((tCopyEnd - tCopyStart) / 1_000_000L)}ms, compress=${((tJpegEnd - tJpegStart) / 1_000_000L)}ms, decode=${((tDecodeEnd - tDecodeStart) / 1_000_000L)}ms, total=${((tEnd - tStart) / 1_000_000L)}ms, strides=[Y:${yRowStride}x${yPixelStride}, UV:${uvRowStride}x${uvPixelStride}]"
             )
 
             bmp
@@ -386,12 +404,12 @@ class CameraAnalyzer(
     }
 
     private fun transformDetectionCoordinates(
-        detection: Detection,
-        bitmapWidth: Int,
-        bitmapHeight: Int,
-        displayWidth: Int,
-        displayHeight: Int,
-        rotationDegrees: Int
+            detection: Detection,
+            bitmapWidth: Int,
+            bitmapHeight: Int,
+            displayWidth: Int,
+            displayHeight: Int,
+            rotationDegrees: Int
     ): Detection {
         // Portrait-only handling: analyzer receives sensor-native landscape frames.
         // We rotate detections to portrait display (rotationDegrees typically 90), then
@@ -399,115 +417,126 @@ class CameraAnalyzer(
         val norm = ((rotationDegrees % 360) + 360) % 360
 
         // Base size in display orientation after rotation
-        val (baseW, baseH) = when (norm) {
-            90, 270 -> bitmapHeight to bitmapWidth
-            else -> bitmapWidth to bitmapHeight
-        }
+        val (baseW, baseH) =
+                when (norm) {
+                    90, 270 -> bitmapHeight to bitmapWidth
+                    else -> bitmapWidth to bitmapHeight
+                }
 
         fun rotateBox90(
-            x: Float, y: Float, w: Float, h: Float
+                x: Float,
+                y: Float,
+                w: Float,
+                h: Float
         ): link.sciber.foofinder.domain.BoundingBox {
             // 90° CW rotation into portrait display space
             val newX = baseW.toFloat() - (y + h)
             val newY = x
             return link.sciber.foofinder.domain.BoundingBox(
-                startX = newX,
-                startY = newY,
-                width = h,
-                height = w,
-                confidence = 0f,
-                classId = 0,
-                className = "poo"
+                    startX = newX,
+                    startY = newY,
+                    width = h,
+                    height = w,
+                    confidence = 0f,
+                    classId = 0,
+                    className = "poo"
             )
         }
 
-        fun rotateArea90(
-            area: DetectionArea
-        ): DetectionArea {
+        fun rotateArea90(area: DetectionArea): DetectionArea {
             val newX = baseW.toFloat() - (area.startY + area.height)
             val newY = area.startX
             return DetectionArea(
-                startX = newX, startY = newY, width = area.height, height = area.width
+                    startX = newX,
+                    startY = newY,
+                    width = area.height,
+                    height = area.width
             )
         }
 
-        val rotatedBoxes = when (norm) {
-            90 -> detection.boundingBoxes.map { b ->
-                val rb = rotateBox90(
-                    b.startX, b.startY, b.width, b.height
-                )
-                b.copy(
-                    startX = rb.startX, startY = rb.startY, width = rb.width, height = rb.height
-                )
-            }
+        val rotatedBoxes =
+                when (norm) {
+                    90 ->
+                            detection.boundingBoxes.map { b ->
+                                val rb = rotateBox90(b.startX, b.startY, b.width, b.height)
+                                b.copy(
+                                        startX = rb.startX,
+                                        startY = rb.startY,
+                                        width = rb.width,
+                                        height = rb.height
+                                )
+                            }
+                    0 -> detection.boundingBoxes
+                    180 ->
+                            detection.boundingBoxes.map { b ->
+                                val newX = baseW.toFloat() - (b.startX + b.width)
+                                val newY = baseH.toFloat() - (b.startY + b.height)
+                                b.copy(startX = newX, startY = newY)
+                            }
+                    270 ->
+                            detection.boundingBoxes.map { b ->
+                                val newX = b.startY
+                                val newY = baseH.toFloat() - (b.startX + b.width)
+                                b.copy(
+                                        startX = newX,
+                                        startY = newY,
+                                        width = b.height,
+                                        height = b.width
+                                )
+                            }
+                    else -> detection.boundingBoxes
+                }
 
-            0 -> detection.boundingBoxes
-            180 -> detection.boundingBoxes.map { b ->
-                val newX = baseW.toFloat() - (b.startX + b.width)
-                val newY = baseH.toFloat() - (b.startY + b.height)
-                b.copy(startX = newX, startY = newY)
-            }
-
-            270 -> detection.boundingBoxes.map { b ->
-                val newX = b.startY
-                val newY = baseH.toFloat() - (b.startX + b.width)
-                b.copy(
-                    startX = newX, startY = newY, width = b.height, height = b.width
-                )
-            }
-
-            else -> detection.boundingBoxes
-        }
-
-        val rotatedArea = when (norm) {
-            90 -> rotateArea90(detection.area)
-            0 -> detection.area
-            180 -> {
-                val a = detection.area
-                DetectionArea(
-                    startX = baseW.toFloat() - (a.startX + a.width),
-                    startY = baseH.toFloat() - (a.startY + a.height),
-                    width = a.width,
-                    height = a.height
-                )
-            }
-
-            270 -> {
-                val a = detection.area
-                DetectionArea(
-                    startX = a.startY,
-                    startY = baseH.toFloat() - (a.startX + a.width),
-                    width = a.height,
-                    height = a.width
-                )
-            }
-
-            else -> detection.area
-        }
+        val rotatedArea =
+                when (norm) {
+                    90 -> rotateArea90(detection.area)
+                    0 -> detection.area
+                    180 -> {
+                        val a = detection.area
+                        DetectionArea(
+                                startX = baseW.toFloat() - (a.startX + a.width),
+                                startY = baseH.toFloat() - (a.startY + a.height),
+                                width = a.width,
+                                height = a.height
+                        )
+                    }
+                    270 -> {
+                        val a = detection.area
+                        DetectionArea(
+                                startX = a.startY,
+                                startY = baseH.toFloat() - (a.startX + a.width),
+                                width = a.height,
+                                height = a.width
+                        )
+                    }
+                    else -> detection.area
+                }
 
         val scaleX = displayWidth.toFloat() / baseW.toFloat()
         val scaleY = displayHeight.toFloat() / baseH.toFloat()
 
         Log.d(
-            TAG,
-            "transformDetectionCoordinates: rotationDegrees=$rotationDegrees, bitmap=${bitmapWidth}x${bitmapHeight}, base=${baseW}x${baseH}, display=${displayWidth}x${displayHeight}, scale=($scaleX,$scaleY)"
+                TAG,
+                "transformDetectionCoordinates: rotationDegrees=$rotationDegrees, bitmap=${bitmapWidth}x${bitmapHeight}, base=${baseW}x${baseH}, display=${displayWidth}x${displayHeight}, scale=($scaleX,$scaleY)"
         )
 
-        val scaledBoxes = rotatedBoxes.map { box ->
-            box.copy(
-                startX = box.startX * scaleX,
-                startY = box.startY * scaleY,
-                width = box.width * scaleX,
-                height = box.height * scaleY
-            )
-        }
+        val scaledBoxes =
+                rotatedBoxes.map { box ->
+                    box.copy(
+                            startX = box.startX * scaleX,
+                            startY = box.startY * scaleY,
+                            width = box.width * scaleX,
+                            height = box.height * scaleY
+                    )
+                }
 
-        val scaledArea = DetectionArea(
-            startX = rotatedArea.startX * scaleX,
-            startY = rotatedArea.startY * scaleY,
-            width = rotatedArea.width * scaleX,
-            height = rotatedArea.height * scaleY
-        )
+        val scaledArea =
+                DetectionArea(
+                        startX = rotatedArea.startX * scaleX,
+                        startY = rotatedArea.startY * scaleY,
+                        width = rotatedArea.width * scaleX,
+                        height = rotatedArea.height * scaleY
+                )
 
         // Preserve existing metrics (inferenceMs, fps, raw/afterNms counts) by copying
         return detection.copy(boundingBoxes = scaledBoxes, area = scaledArea)
