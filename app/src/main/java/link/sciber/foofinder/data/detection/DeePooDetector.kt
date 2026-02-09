@@ -48,6 +48,9 @@ class DeePooDetector(
          * threshold below 0.50 would let hundreds of these through.
          */
         private const val MIN_CONFIDENCE = 0.50f
+
+        /** Log diagnostics every N inference calls to reduce logging overhead. */
+        private const val LOG_EVERY_N = 30
     }
 
     private var interpreter: Interpreter? = null
@@ -67,6 +70,14 @@ class DeePooDetector(
     private val boxesOutputIndex: Int
     private val numDetections: Int
     private val numClasses: Int
+
+    // Pre-allocated reusable buffers (avoid GC pressure on every frame)
+    private val inputBuffer: ByteBuffer
+    private val scoresByteBuffer: ByteBuffer
+    private val boxesByteBuffer: ByteBuffer
+    private val scoresArray: FloatArray
+    private val boxesArray: FloatArray
+    private var inferenceCount = 0L
 
     init {
         val modelBuffer: MappedByteBuffer = FileUtil.loadMappedFile(context, modelPath)
@@ -153,6 +164,18 @@ class DeePooDetector(
         numDetections = scoresShape[1]
         numClasses = if (scoresShape.size >= 3) scoresShape[2] else 1
 
+        // Pre-allocate buffers
+        val inputBytes = if (inputIsUint8) 1 else 4
+        inputBuffer = ByteBuffer.allocateDirect(1 * inputHeight * inputWidth * 3 * inputBytes)
+                .order(ByteOrder.nativeOrder())
+
+        val scoresSize = scoresShape.fold(1) { acc, v -> acc * v }
+        val boxesSize = boxesShape.fold(1) { acc, v -> acc * v }
+        scoresByteBuffer = ByteBuffer.allocateDirect(scoresSize * 4).order(ByteOrder.nativeOrder())
+        boxesByteBuffer = ByteBuffer.allocateDirect(boxesSize * 4).order(ByteOrder.nativeOrder())
+        scoresArray = FloatArray(scoresSize)
+        boxesArray = FloatArray(boxesSize)
+
         Log.d(
                 TAG,
                 "Resolved: scores[idx=$scoresOutputIndex]=${scoresShape.contentToString()}, " +
@@ -196,19 +219,25 @@ class DeePooDetector(
                 return Detection(emptyList(), area)
             }
 
+            inferenceCount++
+            val verbose = inferenceCount % LOG_EVERY_N == 0L
+
             val t0 = System.nanoTime()
-            val input = preprocess(image, area)
+            preprocess(image, area)
             val t1 = System.nanoTime()
-            val rawOutputs = runInference(currentInterpreter, input)
+            val rawOutputs = runInference(currentInterpreter)
             val t2 = System.nanoTime()
-            val boxes = decodeOutputs(rawOutputs, area)
+            val boxes = decodeOutputs(rawOutputs, area, verbose)
             val t3 = System.nanoTime()
 
-            val preMs = (t1 - t0) / 1_000_000L
-            val inferMs = (t2 - t1) / 1_000_000L
-            val postMs = (t3 - t2) / 1_000_000L
-            Log.d(TAG, "pre=$preMs ms  infer=$inferMs ms  post=$postMs ms  boxes=${boxes.size}")
+            if (verbose) {
+                val preMs = (t1 - t0) / 1_000_000L
+                val inferMs = (t2 - t1) / 1_000_000L
+                val postMs = (t3 - t2) / 1_000_000L
+                Log.d(TAG, "pre=$preMs ms  infer=$inferMs ms  post=$postMs ms  boxes=${boxes.size}")
+            }
 
+            val inferMs = (t2 - t1) / 1_000_000L
             Detection(
                     boundingBoxes = boxes,
                     area = area,
@@ -234,7 +263,10 @@ class DeePooDetector(
 
     // ---- Preprocessing ----
 
-    private fun preprocess(image: Bitmap, area: DetectionArea): ByteBuffer {
+    // Reusable pixel array for preprocessing (416*416 = 173056)
+    private val pixelArray = IntArray(inputWidth * inputHeight)
+
+    private fun preprocess(image: Bitmap, area: DetectionArea) {
         // Crop the detection area from the source bitmap
         val crop =
                 Bitmap.createBitmap(
@@ -255,71 +287,51 @@ class DeePooDetector(
                     crop
                 }
 
-        // Fill a ByteBuffer with pixel data
-        val buffer =
-                if (inputIsUint8) {
-                    // UINT8 input: raw pixel bytes [0, 255]
-                    val buf = ByteBuffer.allocateDirect(1 * inputHeight * inputWidth * 3)
-                    buf.order(ByteOrder.nativeOrder())
-                    val pixels = IntArray(inputWidth * inputHeight)
-                    resized.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
-                    for (pixel in pixels) {
-                        buf.put(((pixel shr 16) and 0xFF).toByte()) // R
-                        buf.put(((pixel shr 8) and 0xFF).toByte())  // G
-                        buf.put((pixel and 0xFF).toByte())           // B
-                    }
-                    buf.rewind()
-                    buf
-                } else {
-                    // FLOAT32 input: normalize to [0, 1]
-                    val buf = ByteBuffer.allocateDirect(4 * inputHeight * inputWidth * 3)
-                    buf.order(ByteOrder.nativeOrder())
-                    val pixels = IntArray(inputWidth * inputHeight)
-                    resized.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
-                    for (pixel in pixels) {
-                        buf.putFloat(((pixel shr 16) and 0xFF) / 255f) // R
-                        buf.putFloat(((pixel shr 8) and 0xFF) / 255f)  // G
-                        buf.putFloat((pixel and 0xFF) / 255f)           // B
-                    }
-                    buf.rewind()
-                    buf
-                }
+        // Fill pre-allocated inputBuffer with pixel data
+        inputBuffer.rewind()
+        resized.getPixels(pixelArray, 0, inputWidth, 0, 0, inputWidth, inputHeight)
+
+        if (inputIsUint8) {
+            for (pixel in pixelArray) {
+                inputBuffer.put(((pixel shr 16) and 0xFF).toByte()) // R
+                inputBuffer.put(((pixel shr 8) and 0xFF).toByte())  // G
+                inputBuffer.put((pixel and 0xFF).toByte())           // B
+            }
+        } else {
+            for (pixel in pixelArray) {
+                inputBuffer.putFloat(((pixel shr 16) and 0xFF) / 255f) // R
+                inputBuffer.putFloat(((pixel shr 8) and 0xFF) / 255f)  // G
+                inputBuffer.putFloat((pixel and 0xFF) / 255f)           // B
+            }
+        }
+        inputBuffer.rewind()
 
         if (resized !== image) resized.recycle()
-        return buffer
     }
 
     // ---- Inference ----
 
     private data class RawOutputs(val scores: FloatArray, val boxes: FloatArray)
 
-    private fun runInference(interp: Interpreter, input: ByteBuffer): RawOutputs {
-        // Allocate output buffers
-        val scoresTensor = interp.getOutputTensor(scoresOutputIndex)
-        val boxesTensor = interp.getOutputTensor(boxesOutputIndex)
+    private fun runInference(interp: Interpreter): RawOutputs {
+        // Reuse pre-allocated output buffers
+        scoresByteBuffer.rewind()
+        boxesByteBuffer.rewind()
 
-        val scoresSize = scoresTensor.shape().fold(1) { acc, v -> acc * v }
-        val boxesSize = boxesTensor.shape().fold(1) { acc, v -> acc * v }
+        val outputMap = HashMap<Int, Any>(2)
+        outputMap[scoresOutputIndex] = scoresByteBuffer
+        outputMap[boxesOutputIndex] = boxesByteBuffer
 
-        val scoresBuf = ByteBuffer.allocateDirect(scoresSize * 4).order(ByteOrder.nativeOrder())
-        val boxesBuf = ByteBuffer.allocateDirect(boxesSize * 4).order(ByteOrder.nativeOrder())
+        interp.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputMap)
 
-        val outputMap = HashMap<Int, Any>()
-        outputMap[scoresOutputIndex] = scoresBuf
-        outputMap[boxesOutputIndex] = boxesBuf
+        // Copy into pre-allocated float arrays
+        scoresByteBuffer.rewind()
+        scoresByteBuffer.asFloatBuffer().get(scoresArray)
 
-        interp.runForMultipleInputsOutputs(arrayOf(input), outputMap)
+        boxesByteBuffer.rewind()
+        boxesByteBuffer.asFloatBuffer().get(boxesArray)
 
-        // Extract float arrays
-        scoresBuf.rewind()
-        val scoresArr = FloatArray(scoresSize)
-        scoresBuf.asFloatBuffer().get(scoresArr)
-
-        boxesBuf.rewind()
-        val boxesArr = FloatArray(boxesSize)
-        boxesBuf.asFloatBuffer().get(boxesArr)
-
-        return RawOutputs(scoresArr, boxesArr)
+        return RawOutputs(scoresArray, boxesArray)
     }
 
     // ---- Post-processing ----
@@ -336,9 +348,9 @@ class DeePooDetector(
      *
      * Follows the same logic as `decode_yolov4_tflite_output` in the training notebook.
      */
-    private fun decodeOutputs(raw: RawOutputs, area: DetectionArea): List<BoundingBox> {
-        // Log raw output statistics and score distribution for diagnostics
-        if (raw.scores.isNotEmpty() && raw.boxes.isNotEmpty()) {
+    private fun decodeOutputs(raw: RawOutputs, area: DetectionArea, verbose: Boolean = false): List<BoundingBox> {
+        // Log raw output statistics periodically (expensive min/max scan)
+        if (verbose && raw.scores.isNotEmpty() && raw.boxes.isNotEmpty()) {
             var above90 = 0; var above70 = 0; var above50 = 0; var above40 = 0
             for (s in raw.scores) {
                 if (s > 0.9f) above90++

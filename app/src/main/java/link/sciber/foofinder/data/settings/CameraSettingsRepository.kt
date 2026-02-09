@@ -71,4 +71,10 @@ class CameraSettingsRepository(
             current.toBuilder().setTorchEnabled(enabled).build()
         }
     }
+
+    suspend fun setAccelerator(name: String) {
+        dataStore.updateData { current ->
+            current.toBuilder().setAccelerator(name).build()
+        }
+    }
 }

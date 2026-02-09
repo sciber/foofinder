@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import link.sciber.foofinder.data.detection.Accelerator
 import link.sciber.foofinder.data.settings.CameraSettingsRepository
 import link.sciber.foofinder.data.settings.userSettingsStore
 import link.sciber.foofinder.datastore.UserSettings
@@ -21,6 +22,7 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         private const val DEFAULT_MAX_BOXES = 15
         private const val DEFAULT_NMS_ENABLED = true
         private const val DEFAULT_TORCH_ENABLED = false
+        private val DEFAULT_ACCELERATOR = Accelerator.NNAPI
     }
 
     data class UiState(
@@ -30,7 +32,8 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
             val confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD,
             val maxBoxes: Int = DEFAULT_MAX_BOXES,
             val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED,
-            val torchEnabled: Boolean = DEFAULT_TORCH_ENABLED
+            val torchEnabled: Boolean = DEFAULT_TORCH_ENABLED,
+            val accelerator: Accelerator = DEFAULT_ACCELERATOR
     )
 
     private val repository = CameraSettingsRepository(application.userSettingsStore)
@@ -54,7 +57,8 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
                                 confidenceThreshold = settings.toConfidenceThreshold(),
                                 maxBoxes = settings.toMaxBoxes(),
                                 nmsEnabled = settings.toNmsEnabled(),
-                                torchEnabled = settings.toTorchEnabled()
+                                torchEnabled = settings.toTorchEnabled(),
+                                accelerator = settings.toAccelerator()
                         )
             }
         }
@@ -95,6 +99,11 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch { repository.setTorchEnabled(enabled) }
     }
 
+    fun onAcceleratorChanged(accelerator: Accelerator) {
+        _uiState.update { it.copy(accelerator = accelerator) }
+        viewModelScope.launch { repository.setAccelerator(accelerator.name) }
+    }
+
     private fun UserSettings.toResolution(): Size? {
         return if (resolutionWidth > 0 && resolutionHeight > 0) {
             Size(resolutionWidth, resolutionHeight)
@@ -127,5 +136,17 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
 
     private fun UserSettings.toTorchEnabled(): Boolean {
         return if (hasTorchEnabled()) torchEnabled else DEFAULT_TORCH_ENABLED
+    }
+
+    private fun UserSettings.toAccelerator(): Accelerator {
+        return if (hasAccelerator() && accelerator.isNotBlank()) {
+            try {
+                Accelerator.valueOf(accelerator)
+            } catch (_: IllegalArgumentException) {
+                DEFAULT_ACCELERATOR
+            }
+        } else {
+            DEFAULT_ACCELERATOR
+        }
     }
 }

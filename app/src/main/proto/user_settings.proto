@@ -12,4 +12,5 @@ message UserSettings {
   optional int32 max_boxes = 6;
   optional bool nms_enabled = 7;
   optional bool torch_enabled = 8;
+  optional string accelerator = 9;
 }

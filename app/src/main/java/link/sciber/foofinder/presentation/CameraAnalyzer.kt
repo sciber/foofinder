@@ -1,16 +1,11 @@
 package link.sciber.foofinder.presentation
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
 import android.graphics.Matrix
-import android.graphics.Rect
-import android.graphics.YuvImage
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.core.graphics.scale
-import java.io.ByteArrayOutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
@@ -50,11 +45,14 @@ class CameraAnalyzer(
 
     companion object {
         private const val TAG = "CameraAnalyzer"
+        /** Log detailed timing every N frames to cut logging overhead. */
+        private const val LOG_EVERY_N = 30
     }
 
     // Rolling FPS window
     private val timestampWindowMs = 1500L
     private val timestamps = ArrayDeque<Long>()
+    private var frameCount = 0L
 
     init {
         Log.d(TAG, "Analyzer created with detector")
@@ -87,119 +85,118 @@ class CameraAnalyzer(
                     if (rotationDegrees == 90 || rotationDegrees == 270) height to width
                     else width to height
 
-            Log.d(
-                    TAG,
-                    "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, " +
-                            "format: $format, rotation: ${rotationDegrees}°"
-            )
+            frameCount++
+            val verbose = frameCount % LOG_EVERY_N == 0L
+
+            if (verbose) {
+                Log.d(
+                        TAG,
+                        "Sensor frame: ${width}x${height}, Display frame: ${displayWidth}x${displayHeight}, " +
+                                "format: $format, rotation: ${rotationDegrees}°"
+                )
+            }
 
             val analyzeStart = System.nanoTime()
-            val convertStart = System.nanoTime()
-            val bitmap = imageProxyToBitmap(imageProxy)
-            val convertMs = (System.nanoTime() - convertStart) / 1_000_000L
-            Log.d(TAG, "Timing(analyze): convert=${convertMs}ms")
+            val bitmap = imageProxy.toBitmap()
 
-            if (bitmap != null) {
-                val detectStart = System.nanoTime()
-                val baseSide = min(bitmap.width, bitmap.height)
-                val modelInputSize =
-                        try {
-                            detector.getModelInputSize().coerceAtLeast(1)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to get model input size, detector may be closed", e)
-                            onDetectionResult(emptyDetectionResult())
-                            bitmap.recycle()
-                            return
-                        }
-                var detectionAreaUsed: DetectionArea? = null
+            val detectStart = System.nanoTime()
+            val baseSide = min(bitmap.width, bitmap.height)
+            val modelInputSize =
+                    try {
+                        detector.getModelInputSize().coerceAtLeast(1)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to get model input size, detector may be closed", e)
+                        onDetectionResult(emptyDetectionResult())
+                        bitmap.recycle()
+                        return
+                    }
+            var detectionAreaUsed: DetectionArea? = null
 
-                val detection =
-                        try {
-                            when (strategy) {
-                                ScanStrategy.SCALED ->
-                                        detector.detect(bitmap).also {
-                                            detectionAreaUsed =
-                                                    DetectionArea(
-                                                            0f,
-                                                            0f,
-                                                            baseSide.toFloat(),
-                                                            baseSide.toFloat()
-                                                    )
-                                        }
-                                ScanStrategy.CENTERED -> {
-                                    val tileSize =
-                                            detector.getModelInputSize().coerceAtMost(baseSide)
-                                    val area =
-                                            computeCenterTileArea(
-                                                    baseStartX = 0,
-                                                    baseStartY = 0,
-                                                    baseSide = baseSide,
-                                                    tileSize = tileSize
-                                            )
-
-                                    detector.detectInArea(bitmap, area).also {
-                                        detectionAreaUsed = area
+            val detection =
+                    try {
+                        when (strategy) {
+                            ScanStrategy.SCALED ->
+                                    detector.detect(bitmap).also {
+                                        detectionAreaUsed =
+                                                DetectionArea(
+                                                        0f,
+                                                        0f,
+                                                        baseSide.toFloat(),
+                                                        baseSide.toFloat()
+                                                )
                                     }
+                            ScanStrategy.CENTERED -> {
+                                val tileSize =
+                                        detector.getModelInputSize().coerceAtMost(baseSide)
+                                val area =
+                                        computeCenterTileArea(
+                                                baseStartX = 0,
+                                                baseStartY = 0,
+                                                baseSide = baseSide,
+                                                tileSize = tileSize
+                                        )
+
+                                detector.detectInArea(bitmap, area).also {
+                                    detectionAreaUsed = area
                                 }
                             }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Detection failed, detector may be closed", e)
-                            onDetectionResult(emptyDetectionResult())
-                            bitmap.recycle()
-                            return
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Detection failed, detector may be closed", e)
+                        onDetectionResult(emptyDetectionResult())
+                        bitmap.recycle()
+                        return
+                    }
 
-                val detectMs = (System.nanoTime() - detectStart) / 1_000_000L
-                val transformStart = System.nanoTime()
-                val transformedDetection =
-                        transformDetectionCoordinates(
-                                detection,
-                                bitmap.width,
-                                bitmap.height,
-                                displayWidth,
-                                displayHeight,
-                                rotationDegrees
-                        )
-                val transformMs = (System.nanoTime() - transformStart) / 1_000_000L
+            val detectMs = (System.nanoTime() - detectStart) / 1_000_000L
+            val transformedDetection =
+                    transformDetectionCoordinates(
+                            detection,
+                            bitmap.width,
+                            bitmap.height,
+                            displayWidth,
+                            displayHeight,
+                            rotationDegrees
+                    )
 
-                val now = System.currentTimeMillis()
-                timestamps.addLast(now)
-                while (timestamps.isNotEmpty() && now - timestamps.first() > timestampWindowMs) {
-                    timestamps.removeFirst()
-                }
-                val elapsed = (timestamps.last() - timestamps.first()).coerceAtLeast(1)
-                val fps = if (timestamps.size >= 2) (timestamps.size - 1) * 1000f / elapsed else 0f
+            val now = System.currentTimeMillis()
+            timestamps.addLast(now)
+            while (timestamps.isNotEmpty() && now - timestamps.first() > timestampWindowMs) {
+                timestamps.removeFirst()
+            }
+            val elapsed = (timestamps.last() - timestamps.first()).coerceAtLeast(1)
+            val fps = if (timestamps.size >= 2) (timestamps.size - 1) * 1000f / elapsed else 0f
 
-                onDetectionResult(
-                        transformedDetection.copy(
-                                fps = fps,
-                                afterNmsDetections = transformedDetection.boundingBoxes.size
-                        )
-                )
+            onDetectionResult(
+                    transformedDetection.copy(
+                            fps = fps,
+                            afterNmsDetections = transformedDetection.boundingBoxes.size
+                    )
+            )
 
+            if (verbose) {
                 Log.d(
                         TAG,
                         "Detection completed: ${transformedDetection.boundingBoxes.size} objects detected"
                 )
+            }
 
-                handlePendingTileCapture(
-                        frameBitmap = bitmap,
-                        area = detectionAreaUsed,
-                        rotationDegrees = rotationDegrees,
-                        modelInputSize = modelInputSize
-                )
+            handlePendingTileCapture(
+                    frameBitmap = bitmap,
+                    area = detectionAreaUsed,
+                    rotationDegrees = rotationDegrees,
+                    modelInputSize = modelInputSize
+            )
 
-                val analyzeMs = (System.nanoTime() - analyzeStart) / 1_000_000L
+            val analyzeMs = (System.nanoTime() - analyzeStart) / 1_000_000L
+            if (verbose) {
                 Log.d(
                         TAG,
-                        "Timing(analyze): detect=${detectMs}ms, transform=${transformMs}ms, total=${analyzeMs}ms"
+                        "Timing(analyze): detect=${detectMs}ms, total=${analyzeMs}ms"
                 )
-
-                bitmap.recycle()
-            } else {
-                Log.w(TAG, "Failed to convert ImageProxy to Bitmap")
-                onDetectionResult(emptyDetectionResult())
             }
+
+            bitmap.recycle()
         } catch (e: Exception) {
             Log.e(TAG, "Error analyzing image", e)
             onDetectionResult(emptyDetectionResult())
@@ -287,121 +284,9 @@ class CameraAnalyzer(
         )
     }
 
-    private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
-        return try {
-            when (imageProxy.format) {
-                ImageFormat.YUV_420_888 -> {
-                    // Convert YUV_420_888 to Bitmap with timing
-                    val tYuvStart = System.nanoTime()
-                    val bmp = yuvToBitmap(imageProxy)
-                    val tYuvEnd = System.nanoTime()
-                    val yuvMs = ((tYuvEnd - tYuvStart) / 1_000_000L)
-                    Log.d(TAG, "Timing(convert): YUV->Bitmap=${yuvMs}ms")
-                    bmp
-                }
-                ImageFormat.JPEG -> {
-                    // Convert JPEG to Bitmap with timing
-                    val tJpegStart = System.nanoTime()
-                    val buffer = imageProxy.planes[0].buffer
-                    val bytes = ByteArray(buffer.remaining())
-                    buffer.get(bytes)
-                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    val tJpegEnd = System.nanoTime()
-                    val jpegMs = ((tJpegEnd - tJpegStart) / 1_000_000L)
-                    Log.d(TAG, "Timing(convert): JPEG->Bitmap=${jpegMs}ms")
-                    bmp
-                }
-                else -> {
-                    Log.w(TAG, "Unsupported image format: ${imageProxy.format}")
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error converting ImageProxy to Bitmap", e)
-            null
-        }
-    }
-
-    private fun yuvToBitmap(imageProxy: ImageProxy): Bitmap? {
-        return try {
-            val tStart = System.nanoTime()
-
-            val yPlane = imageProxy.planes[0]
-            val uPlane = imageProxy.planes[1]
-            val vPlane = imageProxy.planes[2]
-
-            val width = imageProxy.width
-            val height = imageProxy.height
-
-            // NV21 format: Y plane followed by interleaved VU
-            val ySize = width * height
-            val uvSize = width * height / 2
-            val nv21 = ByteArray(ySize + uvSize)
-
-            val tCopyStart = System.nanoTime()
-
-            // Copy Y plane with proper stride handling
-            val yBuffer = yPlane.buffer
-            val yRowStride = yPlane.rowStride
-            val yPixelStride = yPlane.pixelStride
-
-            if (yPixelStride == 1 && yRowStride == width) {
-                // Contiguous Y plane - fast path
-                yBuffer.get(nv21, 0, ySize)
-            } else {
-                // Non-contiguous Y plane - copy row by row
-                var pos = 0
-                for (row in 0 until height) {
-                    yBuffer.position(row * yRowStride)
-                    yBuffer.get(nv21, pos, width)
-                    pos += width
-                }
-            }
-
-            // Copy UV planes to NV21 format (interleaved VU)
-            val vBuffer = vPlane.buffer
-            val uBuffer = uPlane.buffer
-            val uvRowStride = vPlane.rowStride
-            val uvPixelStride = vPlane.pixelStride
-            val uvWidth = width / 2
-            val uvHeight = height / 2
-
-            // Interleave V and U into NV21 format
-            var uvPos = ySize
-            for (row in 0 until uvHeight) {
-                for (col in 0 until uvWidth) {
-                    val uvIndex = row * uvRowStride + col * uvPixelStride
-                    nv21[uvPos++] = vBuffer.get(uvIndex)
-                    nv21[uvPos++] = uBuffer.get(uvIndex)
-                }
-            }
-
-            val tCopyEnd = System.nanoTime()
-
-            val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-            val out = ByteArrayOutputStream()
-            val tJpegStart = System.nanoTime()
-            yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
-            val imageBytes = out.toByteArray()
-            val tJpegEnd = System.nanoTime()
-
-            val tDecodeStart = System.nanoTime()
-            val bmp = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            val tDecodeEnd = System.nanoTime()
-
-            val tEnd = System.nanoTime()
-
-            Log.d(
-                    TAG,
-                    "Timing(YUV): copy=${((tCopyEnd - tCopyStart) / 1_000_000L)}ms, compress=${((tJpegEnd - tJpegStart) / 1_000_000L)}ms, decode=${((tDecodeEnd - tDecodeStart) / 1_000_000L)}ms, total=${((tEnd - tStart) / 1_000_000L)}ms, strides=[Y:${yRowStride}x${yPixelStride}, UV:${uvRowStride}x${uvPixelStride}]"
-            )
-
-            bmp
-        } catch (e: Exception) {
-            Log.e(TAG, "Error converting YUV to Bitmap", e)
-            null
-        }
-    }
+    // imageProxyToBitmap / yuvToBitmap removed — replaced by CameraX 1.4
+    // built-in ImageProxy.toBitmap() which uses an optimised native path
+    // (no JPEG round-trip).
 
     private fun transformDetectionCoordinates(
             detection: Detection,
@@ -515,10 +400,7 @@ class CameraAnalyzer(
         val scaleX = displayWidth.toFloat() / baseW.toFloat()
         val scaleY = displayHeight.toFloat() / baseH.toFloat()
 
-        Log.d(
-                TAG,
-                "transformDetectionCoordinates: rotationDegrees=$rotationDegrees, bitmap=${bitmapWidth}x${bitmapHeight}, base=${baseW}x${baseH}, display=${displayWidth}x${displayHeight}, scale=($scaleX,$scaleY)"
-        )
+        // Logging removed from hot path — use verbose flag in analyze() instead
 
         val scaledBoxes =
                 rotatedBoxes.map { box ->

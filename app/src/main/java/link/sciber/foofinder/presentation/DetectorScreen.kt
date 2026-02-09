@@ -56,6 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import link.sciber.foofinder.R
+import link.sciber.foofinder.data.detection.Accelerator
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.presentation.components.DetectorInfoBar
 import link.sciber.foofinder.presentation.components.DetectorSettingsSheet
@@ -97,6 +98,7 @@ fun DetectorScreen(
     val currentConfidenceThreshold = settingsState.confidenceThreshold
     val currentNmsEnabled = settingsState.nmsEnabled
     val currentMaxBoxes = settingsState.maxBoxes
+    val currentAccelerator = settingsState.accelerator
     // Detection results
     var currentDetection by remember { mutableStateOf<Detection?>(null) }
     var currentTileSize by remember { mutableStateOf<Int?>(null) }
@@ -332,13 +334,15 @@ fun DetectorScreen(
                                 modelOptions = modelOptions,
                                 currentModelId = currentModelId,
                                 currentTileSize = currentTileSize,
+                                currentAccelerator = currentAccelerator,
                                 onConfidenceThresholdChanged =
                                         settingsViewModel::onConfidenceThresholdChanged,
                                 onMaxBoxesChanged = settingsViewModel::onMaxBoxesChanged,
                                 onNmsEnabledChanged = settingsViewModel::onNmsEnabledChanged,
                                 onScanStrategyChanged = settingsViewModel::onScanStrategyChanged,
                                 onResolutionChanged = settingsViewModel::onResolutionChanged,
-                                onModelChanged = settingsViewModel::onModelChanged
+                                onModelChanged = settingsViewModel::onModelChanged,
+                                onAcceleratorChanged = settingsViewModel::onAcceleratorChanged
                         )
                     }
                 }
@@ -365,6 +369,7 @@ fun DetectorScreen(
                             modifier = Modifier.fillMaxSize(),
                             currentScanStrategy = currentScanStrategy,
                             modelId = currentModelId,
+                            accelerator = currentAccelerator,
                             onTileSizeChanged = { size -> currentTileSize = size },
                             onDelegateChanged = { desc -> currentDelegate = desc },
                             onCameraReady = { camera ->

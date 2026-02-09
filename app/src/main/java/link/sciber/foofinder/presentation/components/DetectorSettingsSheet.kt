@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import link.sciber.foofinder.data.detection.Accelerator
 import link.sciber.foofinder.presentation.CameraAnalyzer
 import link.sciber.foofinder.utils.CameraResolutionUtils
 
@@ -32,12 +33,14 @@ fun DetectorSettingsSheet(
         modelOptions: List<Pair<String, String>>,
         currentModelId: String,
         currentTileSize: Int?,
+        currentAccelerator: Accelerator = Accelerator.NNAPI,
         onConfidenceThresholdChanged: (Float) -> Unit,
         onMaxBoxesChanged: (Int) -> Unit,
         onNmsEnabledChanged: (Boolean) -> Unit,
         onScanStrategyChanged: (CameraAnalyzer.ScanStrategy) -> Unit,
         onResolutionChanged: (Size) -> Unit,
         onModelChanged: (String) -> Unit,
+        onAcceleratorChanged: (Accelerator) -> Unit = {},
         modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -110,6 +113,22 @@ fun DetectorSettingsSheet(
                     Text(text = "Enable NMS", style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = currentNmsEnabled, onCheckedChange = onNmsEnabledChanged)
                 }
+
+                val acceleratorOptions = listOf(Accelerator.NNAPI, Accelerator.CPU)
+                val acceleratorLabels = listOf("NNAPI (DSP/NPU)", "CPU (XNNPACK)")
+                val selectedAcceleratorIndex =
+                        acceleratorOptions.indexOf(currentAccelerator).coerceAtLeast(0)
+
+                LabeledDropdown(
+                        title = "Accelerator",
+                        options = acceleratorLabels,
+                        selectedIndex = selectedAcceleratorIndex,
+                        onSelectedIndex = { idx ->
+                            if (idx in acceleratorOptions.indices) {
+                                onAcceleratorChanged(acceleratorOptions[idx])
+                            }
+                        }
+                )
             }
         }
 

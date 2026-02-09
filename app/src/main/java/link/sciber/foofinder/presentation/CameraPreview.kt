@@ -54,6 +54,7 @@ fun CameraPreview(
         modifier: Modifier = Modifier,
         currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
         modelId: String = "models/deepoo_yolov4_tiny_416_int8.tflite",
+        accelerator: Accelerator = Accelerator.NNAPI,
         onCameraReady: (Camera?) -> Unit = {},
         onScanStrategyAutoChange: (CameraAnalyzer.ScanStrategy) -> Unit = {},
         onScanStrategyConstraintChange: (Boolean) -> Unit = {},
@@ -184,7 +185,7 @@ fun CameraPreview(
     }
 
     // Initialize detector when model changes
-    LaunchedEffect(modelId) {
+    LaunchedEffect(modelId, accelerator) {
         detector?.close()
         detector = null
         onTileSizeChanged(null)
@@ -194,14 +195,14 @@ fun CameraPreview(
                     DeePooDetector(
                                     context,
                                     modelPath = modelId,
-                                    accelerator = Accelerator.GPU,
+                                    accelerator = accelerator,
                                     numThreads = 4
                             )
                             .also { it.setConfidenceThreshold(currentConfidenceThreshold) }
             detector = newDetector
             onTileSizeChanged(newDetector.getModelInputSize())
             onDelegateChanged(newDetector.getDelegateDescription())
-            Log.d("CameraPreview", "DeePooDetector initialized with model: $modelId")
+            Log.d("CameraPreview", "DeePooDetector initialized with model: $modelId, accelerator: $accelerator")
             currentResolution?.let { applyResolution(it) }
         } catch (e: Exception) {
             Log.e("CameraPreview", "Failed to initialize DeePooDetector", e)
