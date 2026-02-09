@@ -14,8 +14,6 @@ import link.sciber.foofinder.domain.DetectionArea
 import link.sciber.foofinder.domain.Detector
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.CompatibilityList
-import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import org.tensorflow.lite.support.common.FileUtil
 
@@ -34,7 +32,7 @@ class DeePooDetector(
         modelPath: String = "models/deepoo_yolov4_tiny_416_int8.tflite",
         private var confThreshold: Float = MIN_CONFIDENCE,
         private val iouThreshold: Float = 0.45f,
-        accelerator: Accelerator = Accelerator.GPU,
+        accelerator: Accelerator = Accelerator.CPU,
         numThreads: Int = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
 ) : Detector {
 
@@ -54,7 +52,6 @@ class DeePooDetector(
     }
 
     private var interpreter: Interpreter? = null
-    private var gpuDelegate: GpuDelegate? = null
     private var nnApiDelegate: NnApiDelegate? = null
     private val interpreterLock = Any()
     @Volatile private var isClosed = false
@@ -87,23 +84,6 @@ class DeePooDetector(
                 Interpreter.Options().apply {
                     setNumThreads(threads)
                     when (accelerator) {
-                        Accelerator.GPU -> {
-                            try {
-                                val compat = CompatibilityList()
-                                if (compat.isDelegateSupportedOnThisDevice) {
-                                    gpuDelegate = GpuDelegate()
-                                    addDelegate(gpuDelegate)
-                                    Log.d(TAG, "Using GPU delegate")
-                                    activeAccelerator = Accelerator.GPU
-                                } else {
-                                    Log.w(TAG, "GPU delegate not supported; falling back to CPU")
-                                    activeAccelerator = Accelerator.CPU
-                                }
-                            } catch (t: Throwable) {
-                                Log.w(TAG, "GPU delegate failed; falling back to CPU", t)
-                                activeAccelerator = Accelerator.CPU
-                            }
-                        }
                         Accelerator.NNAPI -> {
                             try {
                                 nnApiDelegate = NnApiDelegate()
@@ -201,7 +181,6 @@ class DeePooDetector(
 
     fun getDelegateDescription(): String {
         return when (activeAccelerator) {
-            Accelerator.GPU -> "GPU delegate"
             Accelerator.NNAPI -> "NNAPI delegate"
             Accelerator.CPU -> "CPU/XNNPACK(${threads}t)"
         }
@@ -254,9 +233,7 @@ class DeePooDetector(
             isClosed = true
             interpreter?.close()
             interpreter = null
-            try { gpuDelegate?.close() } catch (_: Throwable) {}
             try { nnApiDelegate?.close() } catch (_: Throwable) {}
-            gpuDelegate = null
             nnApiDelegate = null
         }
     }

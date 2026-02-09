@@ -5,17 +5,21 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve line numbers for crash stack traces
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ---- TensorFlow Lite ----
+-keep class org.tensorflow.lite.** { *; }
+-keep class org.tensorflow.lite.nnapi.** { *; }
+-keepclassmembers class org.tensorflow.lite.** { *; }
+-dontwarn org.tensorflow.lite.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ---- Protobuf Lite (used by DataStore) ----
+-keep class com.google.protobuf.** { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { *; }
+-dontwarn com.google.protobuf.**
+
+# ---- CameraX ----
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**
