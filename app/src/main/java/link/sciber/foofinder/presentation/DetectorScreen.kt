@@ -90,9 +90,7 @@ fun DetectorScreen(
 
     val modelOptions = remember {
         listOf(
-                "models/deepoo_efficientdet-lite0.tflite" to "EfficientDet-Lite0 FP32",
-                "models/deepoo_efficientdet_lite0_fp16.tflite" to "EfficientDet-Lite0 FP16",
-                "models/deepoo_efficientdet_lite0_int8.tflite" to "EfficientDet-Lite0 INT8",
+                "models/deepoo_yolov4_tiny_416_int8.tflite" to "YOLOv4-Tiny 416 INT8",
         )
     }
 

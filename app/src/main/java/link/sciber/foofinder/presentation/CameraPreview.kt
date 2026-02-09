@@ -36,7 +36,7 @@ import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
 import link.sciber.foofinder.data.detection.Accelerator
-import link.sciber.foofinder.data.detection.EfficientDetLiteDetector
+import link.sciber.foofinder.data.detection.DeePooDetector
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
 
@@ -53,7 +53,7 @@ fun CameraPreview(
         currentNmsEnabled: Boolean,
         modifier: Modifier = Modifier,
         currentScanStrategy: CameraAnalyzer.ScanStrategy = CameraAnalyzer.ScanStrategy.CENTERED,
-        modelId: String = "models/deepoo_efficientdet-lite0.tflite",
+        modelId: String = "models/deepoo_yolov4_tiny_416_int8.tflite",
         onCameraReady: (Camera?) -> Unit = {},
         onScanStrategyAutoChange: (CameraAnalyzer.ScanStrategy) -> Unit = {},
         onScanStrategyConstraintChange: (Boolean) -> Unit = {},
@@ -65,7 +65,7 @@ fun CameraPreview(
     val context = LocalContext.current
 
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
-    var detector by remember { mutableStateOf<EfficientDetLiteDetector?>(null) }
+    var detector by remember { mutableStateOf<DeePooDetector?>(null) }
     var analyzer by remember { mutableStateOf<CameraAnalyzer?>(null) }
 
     LaunchedEffect(analyzer) {
@@ -89,7 +89,7 @@ fun CameraPreview(
         )
     }
 
-    fun requiresScaledSingle(det: EfficientDetLiteDetector?, resolution: Size?): Boolean {
+    fun requiresScaledSingle(det: DeePooDetector?, resolution: Size?): Boolean {
         val tileSize = det?.getModelInputSize() ?: return false
         val target = resolution ?: return false
         return min(target.width, target.height) < tileSize
@@ -97,7 +97,7 @@ fun CameraPreview(
 
     fun resolveStrategy(
             requested: CameraAnalyzer.ScanStrategy,
-            det: EfficientDetLiteDetector?,
+            det: DeePooDetector?,
             resolution: Size?,
             notify: Boolean
     ): CameraAnalyzer.ScanStrategy {
@@ -191,7 +191,7 @@ fun CameraPreview(
         onDelegateChanged(null)
         try {
             val newDetector =
-                    EfficientDetLiteDetector(
+                    DeePooDetector(
                                     context,
                                     modelPath = modelId,
                                     accelerator = Accelerator.GPU,
@@ -201,10 +201,10 @@ fun CameraPreview(
             detector = newDetector
             onTileSizeChanged(newDetector.getModelInputSize())
             onDelegateChanged(newDetector.getDelegateDescription())
-            Log.d("CameraPreview", "EfficientDetLiteDetector initialized with model: $modelId")
+            Log.d("CameraPreview", "DeePooDetector initialized with model: $modelId")
             currentResolution?.let { applyResolution(it) }
         } catch (e: Exception) {
-            Log.e("CameraPreview", "Failed to initialize EfficientDetLiteDetector", e)
+            Log.e("CameraPreview", "Failed to initialize DeePooDetector", e)
         }
     }
 

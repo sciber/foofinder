@@ -16,8 +16,8 @@ import link.sciber.foofinder.datastore.UserSettings
 class CameraSettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        private const val DEFAULT_MODEL_ID = "models/deepoo_efficientdet-lite0.tflite"
-        private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.45f
+        private const val DEFAULT_MODEL_ID = "models/deepoo_yolov4_tiny_416_int8.tflite"
+        private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.55f
         private const val DEFAULT_MAX_BOXES = 15
         private const val DEFAULT_NMS_ENABLED = true
         private const val DEFAULT_TORCH_ENABLED = false
@@ -47,7 +47,7 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
                                 modelId =
                                         settings.modelId.takeIf {
                                             it.isNotBlank() &&
-                                                    it.startsWith("models/deepoo_efficientdet")
+                                                    it == DEFAULT_MODEL_ID
                                         }
                                                 ?: DEFAULT_MODEL_ID,
                                 scanStrategy = settings.scanStrategy.toScanStrategy(),

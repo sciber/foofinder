@@ -14,12 +14,12 @@ import java.io.ByteArrayOutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
-import link.sciber.foofinder.data.detection.EfficientDetLiteDetector
+import link.sciber.foofinder.data.detection.DeePooDetector
 import link.sciber.foofinder.domain.Detection
 import link.sciber.foofinder.domain.DetectionArea
 
 class CameraAnalyzer(
-        private val detector: EfficientDetLiteDetector,
+        private val detector: DeePooDetector,
         private val onDetectionResult: (Detection) -> Unit
 ) : ImageAnalysis.Analyzer {
 
