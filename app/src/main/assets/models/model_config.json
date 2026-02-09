@@ -1,0 +1,53 @@
+{
+  "model_type": "yolov4_tiny",
+  "input_size": 416,
+  "num_classes": 1,
+  "class_names": [
+    "poo"
+  ],
+  "quantization": "INT8",
+  "input_dtype": "uint8",
+  "output_dtype": "float32",
+  "input_mean": 0.0,
+  "input_std": 255.0,
+  "anchors": [
+    [
+      10,
+      14
+    ],
+    [
+      23,
+      27
+    ],
+    [
+      37,
+      58
+    ],
+    [
+      81,
+      82
+    ],
+    [
+      135,
+      169
+    ],
+    [
+      344,
+      319
+    ]
+  ],
+  "anchor_masks": {
+    "large": [
+      3,
+      4,
+      5
+    ],
+    "small": [
+      0,
+      1,
+      2
+    ]
+  },
+  "conf_threshold": 0.25,
+  "nms_threshold": 0.45
+}
