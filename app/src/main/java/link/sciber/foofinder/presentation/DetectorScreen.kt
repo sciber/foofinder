@@ -99,6 +99,7 @@ fun DetectorScreen(
     val currentNmsEnabled = settingsState.nmsEnabled
     val currentMaxBoxes = settingsState.maxBoxes
     val currentAccelerator = settingsState.accelerator
+    val isNnapiAvailable = settingsState.isNnapiAvailable
     // Detection results
     var currentDetection by remember { mutableStateOf<Detection?>(null) }
     var currentTileSize by remember { mutableStateOf<Int?>(null) }
@@ -277,6 +278,19 @@ fun DetectorScreen(
         }
     }
 
+    // Notify user when NNAPI was requested but delegate fell back to CPU
+    LaunchedEffect(currentDelegate, currentAccelerator) {
+        val desc = currentDelegate
+        if (currentAccelerator == Accelerator.NNAPI &&
+                desc != null &&
+                !desc.contains("NNAPI", ignoreCase = true)
+        ) {
+            snackbarHostState.showSnackbar(
+                    message = "NNAPI unavailable on this device — using CPU instead"
+            )
+        }
+    }
+
     val sheetScrollState = rememberScrollState()
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -335,6 +349,7 @@ fun DetectorScreen(
                                 currentModelId = currentModelId,
                                 currentTileSize = currentTileSize,
                                 currentAccelerator = currentAccelerator,
+                                isNnapiAvailable = isNnapiAvailable,
                                 onConfidenceThresholdChanged =
                                         settingsViewModel::onConfidenceThresholdChanged,
                                 onMaxBoxesChanged = settingsViewModel::onMaxBoxesChanged,

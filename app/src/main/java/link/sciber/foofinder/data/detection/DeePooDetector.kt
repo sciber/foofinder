@@ -2,6 +2,7 @@ package link.sciber.foofinder.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -49,6 +50,91 @@ class DeePooDetector(
 
         /** Log diagnostics every N inference calls to reduce logging overhead. */
         private const val LOG_EVERY_N = 30
+
+        /** Minimum speedup ratio (NNAPI vs CPU) to consider NNAPI worthwhile. */
+        private const val NNAPI_SPEEDUP_THRESHOLD = 1.10  // 10 % faster
+
+        /** Number of timed inferences per probe leg. */
+        private const val PROBE_ITERATIONS = 3
+
+        /**
+         * Probe whether NNAPI can actually accelerate the given model on this
+         * device by comparing inference times with and without the delegate.
+         *
+         * Returns `true` only when NNAPI is measurably faster than CPU-only
+         * inference.  The NNAPI CPU fallback is explicitly rejected via
+         * [NnApiDelegate.Options.setUseNnapiCpu] so we only measure real HW
+         * accelerators (DSP / NPU / GPU).
+         *
+         * This is intentionally heavyweight (loads model twice + runs several
+         * inferences) so it should be called **once**, off the main thread,
+         * when the model or device configuration changes.
+         */
+        fun isNnapiUsable(context: Context, modelPath: String): Boolean {
+            if (Build.VERSION.SDK_INT < 27) return false
+            return try {
+                val modelBuffer = FileUtil.loadMappedFile(context, modelPath)
+
+                // --- helper to allocate I/O buffers for an interpreter ---
+                fun allocBuffers(interp: Interpreter): Pair<ByteBuffer, HashMap<Int, Any>> {
+                    val inT = interp.getInputTensor(0)
+                    val inBuf = ByteBuffer.allocateDirect(
+                            inT.shape().fold(1) { a, v -> a * v } *
+                                    if (inT.dataType() == DataType.UINT8) 1 else 4
+                    ).order(ByteOrder.nativeOrder())
+                    val outBufs = HashMap<Int, Any>(interp.outputTensorCount)
+                    for (i in 0 until interp.outputTensorCount) {
+                        val s = interp.getOutputTensor(i).shape()
+                        outBufs[i] = ByteBuffer.allocateDirect(s.fold(1) { a, v -> a * v } * 4)
+                                .order(ByteOrder.nativeOrder())
+                    }
+                    return inBuf to outBufs
+                }
+
+                // --- helper to benchmark one interpreter ---
+                fun benchmark(interp: Interpreter, inBuf: ByteBuffer, outBufs: HashMap<Int, Any>): Long {
+                    // warm-up
+                    inBuf.rewind()
+                    interp.runForMultipleInputsOutputs(arrayOf(inBuf), outBufs)
+                    // timed runs
+                    val start = System.nanoTime()
+                    repeat(PROBE_ITERATIONS) {
+                        inBuf.rewind()
+                        outBufs.values.forEach { (it as ByteBuffer).rewind() }
+                        interp.runForMultipleInputsOutputs(arrayOf(inBuf), outBufs)
+                    }
+                    return System.nanoTime() - start
+                }
+
+                // ---- CPU-only baseline ----
+                val cpuInterp = Interpreter(modelBuffer,
+                        Interpreter.Options().setNumThreads(1))
+                val (cpuIn, cpuOut) = allocBuffers(cpuInterp)
+                val cpuNs = benchmark(cpuInterp, cpuIn, cpuOut)
+                cpuInterp.close()
+
+                // ---- NNAPI (no CPU fallback) ----
+                val nnapiOpts = NnApiDelegate.Options().setUseNnapiCpu(false)
+                val delegate = NnApiDelegate(nnapiOpts)
+                val nnapiInterp = Interpreter(modelBuffer,
+                        Interpreter.Options().setNumThreads(1).apply { addDelegate(delegate) })
+                val (nnapiIn, nnapiOut) = allocBuffers(nnapiInterp)
+                val nnapiNs = benchmark(nnapiInterp, nnapiIn, nnapiOut)
+                nnapiInterp.close()
+                delegate.close()
+
+                // ---- compare ----
+                val speedup = cpuNs.toDouble() / nnapiNs.toDouble()
+                val usable = speedup >= NNAPI_SPEEDUP_THRESHOLD
+                Log.d(TAG, "isNnapiUsable($modelPath): " +
+                        "cpu=${cpuNs / 1_000_000}ms, nnapi=${nnapiNs / 1_000_000}ms, " +
+                        "speedup=%.2fx → $usable".format(speedup))
+                usable
+            } catch (t: Throwable) {
+                Log.d(TAG, "isNnapiUsable($modelPath): probe failed", t)
+                false
+            }
+        }
     }
 
     private var interpreter: Interpreter? = null
@@ -86,9 +172,11 @@ class DeePooDetector(
                     when (accelerator) {
                         Accelerator.NNAPI -> {
                             try {
-                                nnApiDelegate = NnApiDelegate()
+                                val nnapiOpts = NnApiDelegate.Options()
+                                        .setUseNnapiCpu(false)
+                                nnApiDelegate = NnApiDelegate(nnapiOpts)
                                 addDelegate(nnApiDelegate)
-                                Log.d(TAG, "Using NNAPI delegate")
+                                Log.d(TAG, "Using NNAPI delegate (CPU fallback disabled)")
                                 activeAccelerator = Accelerator.NNAPI
                             } catch (t: Throwable) {
                                 Log.w(TAG, "NNAPI delegate failed; falling back to CPU", t)

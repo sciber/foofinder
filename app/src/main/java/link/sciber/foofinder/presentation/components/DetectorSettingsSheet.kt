@@ -34,6 +34,7 @@ fun DetectorSettingsSheet(
         currentModelId: String,
         currentTileSize: Int?,
         currentAccelerator: Accelerator = Accelerator.NNAPI,
+        isNnapiAvailable: Boolean? = null,
         onConfidenceThresholdChanged: (Float) -> Unit,
         onMaxBoxesChanged: (Int) -> Unit,
         onNmsEnabledChanged: (Boolean) -> Unit,
@@ -115,7 +116,14 @@ fun DetectorSettingsSheet(
                 }
 
                 val acceleratorOptions = listOf(Accelerator.NNAPI, Accelerator.CPU)
-                val acceleratorLabels = listOf("NNAPI (DSP/NPU)", "CPU (XNNPACK)")
+                val acceleratorLabels = listOf(
+                        when (isNnapiAvailable) {
+                            null -> "NNAPI (probing\u2026)"
+                            true -> "NNAPI (DSP/NPU)"
+                            false -> "NNAPI (unavailable)"
+                        },
+                        "CPU (XNNPACK)"
+                )
                 val selectedAcceleratorIndex =
                         acceleratorOptions.indexOf(currentAccelerator).coerceAtLeast(0)
 
@@ -123,9 +131,20 @@ fun DetectorSettingsSheet(
                         title = "Accelerator",
                         options = acceleratorLabels,
                         selectedIndex = selectedAcceleratorIndex,
+                        isOptionEnabled = { idx ->
+                            val option = acceleratorOptions.getOrNull(idx)
+                            if (option == Accelerator.NNAPI) {
+                                isNnapiAvailable == true
+                            } else {
+                                true
+                            }
+                        },
                         onSelectedIndex = { idx ->
                             if (idx in acceleratorOptions.indices) {
-                                onAcceleratorChanged(acceleratorOptions[idx])
+                                val option = acceleratorOptions[idx]
+                                if (option != Accelerator.NNAPI || isNnapiAvailable == true) {
+                                    onAcceleratorChanged(option)
+                                }
                             }
                         }
                 )

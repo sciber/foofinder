@@ -4,12 +4,15 @@ import android.app.Application
 import android.util.Size
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import link.sciber.foofinder.data.detection.Accelerator
+import link.sciber.foofinder.data.detection.DeePooDetector
 import link.sciber.foofinder.data.settings.CameraSettingsRepository
 import link.sciber.foofinder.data.settings.userSettingsStore
 import link.sciber.foofinder.datastore.UserSettings
@@ -33,7 +36,8 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
             val maxBoxes: Int = DEFAULT_MAX_BOXES,
             val nmsEnabled: Boolean = DEFAULT_NMS_ENABLED,
             val torchEnabled: Boolean = DEFAULT_TORCH_ENABLED,
-            val accelerator: Accelerator = DEFAULT_ACCELERATOR
+            val accelerator: Accelerator = DEFAULT_ACCELERATOR,
+            val isNnapiAvailable: Boolean? = null  // null = still probing
     )
 
     private val repository = CameraSettingsRepository(application.userSettingsStore)
@@ -41,25 +45,51 @@ class CameraSettingsViewModel(application: Application) : AndroidViewModel(appli
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    private var lastProbedModelId: String? = null
+
     init {
         viewModelScope.launch {
             repository.settings.collect { settings ->
+                val modelId = settings.modelId.takeIf {
+                    it.isNotBlank() && it == DEFAULT_MODEL_ID
+                } ?: DEFAULT_MODEL_ID
+
                 _uiState.value =
                         UiState(
                                 resolution = settings.toResolution(),
-                                modelId =
-                                        settings.modelId.takeIf {
-                                            it.isNotBlank() &&
-                                                    it == DEFAULT_MODEL_ID
-                                        }
-                                                ?: DEFAULT_MODEL_ID,
+                                modelId = modelId,
                                 scanStrategy = settings.scanStrategy.toScanStrategy(),
                                 confidenceThreshold = settings.toConfidenceThreshold(),
                                 maxBoxes = settings.toMaxBoxes(),
                                 nmsEnabled = settings.toNmsEnabled(),
                                 torchEnabled = settings.toTorchEnabled(),
-                                accelerator = settings.toAccelerator()
+                                accelerator = settings.toAccelerator(),
+                                isNnapiAvailable = _uiState.value.isNnapiAvailable
                         )
+
+                if (modelId != lastProbedModelId) {
+                    lastProbedModelId = modelId
+                    probeNnapiAvailability(modelId)
+                }
+            }
+        }
+    }
+
+    private fun probeNnapiAvailability(modelId: String) {
+        _uiState.update { it.copy(isNnapiAvailable = null) }  // probing
+        viewModelScope.launch {
+            val usable = withContext(Dispatchers.IO) {
+                DeePooDetector.isNnapiUsable(getApplication(), modelId)
+            }
+            _uiState.update { st ->
+                val corrected = if (!usable && st.accelerator == Accelerator.NNAPI) {
+                    // Saved preference was NNAPI but it's not available — auto-correct
+                    launch { repository.setAccelerator(Accelerator.CPU.name) }
+                    st.copy(isNnapiAvailable = usable, accelerator = Accelerator.CPU)
+                } else {
+                    st.copy(isNnapiAvailable = usable)
+                }
+                corrected
             }
         }
     }
